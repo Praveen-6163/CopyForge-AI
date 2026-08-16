@@ -1,0 +1,185 @@
+# CopyForge AI — Automated Copywriting & Tone Transformer
+
+> **DecodeLabs Generative AI Project 2: Automated Copywriting & Tone Transformer**  
+> *"Turn product ideas into platform-ready content."*
+
+CopyForge AI is a production-quality generative AI SaaS workspace built for marketing teams, developers, and founders. It transforms raw product briefs into platform-optimized marketing content tailored for **LinkedIn**, **Instagram**, **Email**, **X/Twitter**, **Facebook**, and **Website Landing Pages**.
+
+---
+
+## 🌟 Key Features
+
+- 🧠 **Dynamic Prompt Template Compilation**: Backend constructs structured prompts dynamically based on Product Name, Description, Platform Rules, Tone Directives, Target Audience, Content Objective, and custom instructions.
+- 🎛️ **Advanced Generation Parameters**: Fine-tune output creativity with Temperature (0.0 – 1.0), Top-P Nucleus Sampling (0.0 – 1.0), and Max Output Token controls with inline explanatory guides.
+- 📐 **Backend Platform Constraints Engine**: Modular platform rules enforced directly in backend generation logic (hooks, paragraph line breaks, character boundaries, emoji styling, CTAs, hashtags, subject line formatting).
+- 🛡️ **Output Validation & Formatting Service**: Strips conversational preambles, validates structural requirements (e.g. Email subject lines, Twitter character gauges), and provides diagnostic pass/warning feedback.
+- ⚡ **Asynchronous Execution & Retry Logic**: Async FastAPI backend featuring exponential backoff retries with randomized jitter to handle OpenAI rate limits (HTTP 429) and transient errors gracefully.
+- 🔌 **Seamless Demo Mode**: Fully operational out-of-the-box without an API key using a high-quality local generation engine for easy testing and evaluation.
+- 💾 **SQLite History & Bookmarks**: Save, search, filter by platform/tone, delete, and reopen past generations seamlessly.
+- 📑 **Preset Form formulas & Templates**: 7 built-in templates (Product Launch, Startup Announcement, Thought Leadership, etc.) for one-click form completion.
+- 🔍 **Prompt Inspector**: View exact compiled system and user prompts sent to the backend LLM engine.
+- 📤 **Multi-Format Export**: One-click Copy, TXT export, Markdown export, and Web Share API integration.
+
+---
+
+## 🏗️ Architecture & Conceptual Flow
+
+```
+User Input Brief (Product, Platform, Tone, Audience, Objective, Params)
+                          │
+                          ▼
+             1. Input Validation & Pydantic Schemas
+                          │
+                          ▼
+            2. Dynamic Prompt Compiler Service
+     (Compiles System Prompt, User Prompt & Directives)
+                          │
+                          ▼
+          3. Platform Rules & Tone Directives Engine
+   (LinkedIn / IG / Email / Twitter / FB / Web Rules)
+                          │
+                          ▼
+         4. AI Service (Async OpenAI SDK / Demo Fallback)
+    (Exponential Backoff, Rate Limit Jitter, 30s Timeout)
+                          │
+                          ▼
+           5. Output Validation & Formatter Service
+      (Prefix Stripping, Structure Verification, Gauges)
+                          │
+                          ▼
+          6. SQLite Storage & Interactive Editor Output
+```
+
+---
+
+## ⚙️ Parameter Tuning Guide
+
+| Parameter | Range | Default | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Temperature** | `0.0` → `1.0` | `0.5` | Controls creativity and randomness. `0.2` = structured & factual; `0.8` = highly creative marketing copy. |
+| **Top-P** | `0.0` → `1.0` | `0.9` | Nucleus sampling threshold. Limits token pool selection to top cumulative probability mass. |
+| **Max Tokens** | `100` → `2000` | `750` | Maximum token ceiling for output length (~750 tokens ≈ 500 words). |
+
+---
+
+## 📱 Platform Rules Breakdown
+
+- **LinkedIn**: Thought-leadership opening hook, line-spaced short paragraphs, value insights, comment-driving CTA, 3-5 hashtags.
+- **Instagram**: High-energy visual hook, short readable emoji sections, link-in-bio CTA, hashtag cluster.
+- **X/Twitter**: Character-aware output (<280 chars single tweet or structured 1/, 2/ thread), zero fluff, punchy CTA.
+- **Email**: Formatted headers (`SUBJECT LINE:`, `PREVIEW TEXT:`, `GREETING:`, `BODY:`, `CALL TO ACTION:`, `SIGN-OFF:`).
+- **Facebook**: Story-driven conversational flow, community question CTA.
+- **Website/Product Page**: Hero Headline (`#`), Subheadline (`##`), 3 Key Benefit bullet points (`###`), Primary CTA.
+
+---
+
+## 🚀 Environment Setup & Installation
+
+### Prerequisites
+- **Python**: `3.11+`
+- **Node.js**: `v18+` or `v20+`
+
+### 1. Clone & Configure Environment
+
+Create `.env` file in the project root:
+
+```bash
+# CopyForge AI Environment Variables
+
+# OpenAI API Key (Leave blank to enable Demo Mode automatically)
+OPENAI_API_KEY=
+
+# OpenAI Model configuration
+OPENAI_MODEL=gpt-4o-mini
+
+# Backend Port
+PORT=8000
+```
+
+---
+
+## 🏃 Running the Application
+
+### Option A: Running Backend & Frontend Together
+
+#### Step 1: Start Backend Server
+```bash
+# Navigate to backend
+cd backend
+
+# Create virtual environment (if not already created)
+python -m venv venv
+
+# Activate virtualenv
+# On Windows PowerShell / CMD:
+venv\Scripts\activate
+# On macOS / Linux:
+source venv/bin/activate
+
+# Install backend dependencies
+pip install -r requirements.txt
+
+# Start FastAPI Uvicorn Server (Port 8000)
+python run.py
+```
+> Backend API will be active at: `http://localhost:8000` (API Swagger Docs at `http://localhost:8000/docs`)
+
+#### Step 2: Start Frontend Application
+```bash
+# Open a new terminal and navigate to frontend
+cd frontend
+
+# Install npm dependencies
+npm install
+
+# Start Vite Development Server (Port 3000)
+npm run dev
+```
+> Open browser at: `http://localhost:3000`
+
+---
+
+## 📡 API Endpoint Reference
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `POST` | `/api/generate` | Main content generation endpoint |
+| `POST` | `/api/improve` | Refines copy (make shorter, make longer, change tone, change platform) |
+| `POST` | `/api/regenerate` | Re-executes generation with tweaked parameters |
+| `GET` | `/api/history` | Fetches SQLite generation history with search/filter queries |
+| `GET` | `/api/history/{id}` | Fetches single history record by ID |
+| `DELETE` | `/api/history/{id}` | Deletes history record by ID |
+| `POST` | `/api/history/{id}/toggle-save` | Toggles bookmark status |
+| `GET` | `/api/templates` | Returns list of preset prompt formulas |
+| `GET` | `/api/health` | Returns health status, OpenAI model, and Demo Mode indicator |
+
+---
+
+## 🧪 Testing
+
+Run automated backend verification tests:
+```bash
+python backend/test_api.py
+```
+
+Run frontend production build verification:
+```bash
+cd frontend
+npm run build
+```
+
+---
+
+## 🎯 DecodeLabs Project Compliance Checklist
+
+- [x] Dynamic prompt template compilation
+- [x] Product name variable & description
+- [x] Platform selection (LinkedIn, Instagram, Email, X/Twitter, Facebook, Website)
+- [x] Tone selection (8 curated tones)
+- [x] Temperature & Top-P control sliders
+- [x] Platform-specific output constraints
+- [x] Post-generation output validation & prefix stripping
+- [x] Async execution, retry logic & rate limit jitter
+- [x] SQLite database history storage
+- [x] Demo mode fallback when API key is unconfigured
+- [x] Professional SaaS "Creative AI Studio" UI/UX
