@@ -181,17 +181,37 @@ export const App: React.FC = () => {
     });
   };
 
+  const handleNewGeneration = () => {
+    setActiveView('editor');
+    setGenerationOutput(null);
+    setPipelineStage('idle');
+    setIsHistoryOpen(false);
+    setIsTemplatesOpen(false);
+    setIsPromptInspectorOpen(false);
+    setIsSettingsOpen(false);
+    setFormData({
+      product_name: '',
+      product_description: '',
+      platform: 'LinkedIn',
+      tone: 'Professional',
+      audience: 'General',
+      objective: 'Product launch',
+      additional_instructions: '',
+      parameters: {
+        temperature: 0.5,
+        top_p: 0.9,
+        max_tokens: 750,
+      },
+    });
+  };
+
   return (
     <div className="min-h-screen flex bg-[#0b0f19] text-slate-100 font-sans antialiased">
       {/* SaaS Sidebar */}
       <Sidebar
         health={health}
         activeView={activeView}
-        onNewGeneration={() => {
-          setActiveView('editor');
-          setGenerationOutput(null);
-          setPipelineStage('idle');
-        }}
+        onNewGeneration={handleNewGeneration}
         onOpenHistory={() => {
           setSavedOnlyMode(false);
           setIsHistoryOpen(true);
@@ -222,6 +242,7 @@ export const App: React.FC = () => {
                 onGenerate={handleGenerate}
                 isLoading={isLoading}
                 onOpenTemplates={() => setIsTemplatesOpen(true)}
+                onResetForm={handleNewGeneration}
               />
             </div>
 

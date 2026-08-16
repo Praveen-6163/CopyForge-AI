@@ -1,7 +1,7 @@
 import React from 'react';
 import { 
   Sparkles, Linkedin, Instagram, Mail, Twitter, Facebook, Globe,
-  LayoutTemplate, AlertCircle
+  LayoutTemplate, AlertCircle, RotateCcw
 } from 'lucide-react';
 import { 
   GenerateRequest, PlatformType, ToneType, AudienceType, ObjectiveType, PromptParameters 
@@ -14,6 +14,7 @@ interface ContentBriefFormProps {
   onGenerate: () => void;
   isLoading: boolean;
   onOpenTemplates: () => void;
+  onResetForm?: () => void;
 }
 
 const PLATFORMS: { id: PlatformType; label: string; icon: any; color: string }[] = [
@@ -50,6 +51,7 @@ export const ContentBriefForm: React.FC<ContentBriefFormProps> = ({
   onGenerate,
   isLoading,
   onOpenTemplates,
+  onResetForm,
 }) => {
   const [customAudience, setCustomAudience] = React.useState('');
 
@@ -75,14 +77,27 @@ export const ContentBriefForm: React.FC<ContentBriefFormProps> = ({
           </h2>
           <p className="text-xs text-slate-400 mt-0.5">Define your product parameters and generation goals.</p>
         </div>
-        <button
-          type="button"
-          onClick={onOpenTemplates}
-          className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-brand-300 border border-brand-500/30 flex items-center gap-1.5 transition-all hover:border-brand-500/60"
-        >
-          <LayoutTemplate className="w-3.5 h-3.5" />
-          <span>Browse Templates</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {onResetForm && (
+            <button
+              type="button"
+              onClick={onResetForm}
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-400 hover:text-slate-200 border border-slate-700 flex items-center gap-1 transition-colors"
+              title="Clear brief form for a new generation"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Brief</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onOpenTemplates}
+            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-brand-300 border border-brand-500/30 flex items-center gap-1.5 transition-all hover:border-brand-500/60"
+          >
+            <LayoutTemplate className="w-3.5 h-3.5" />
+            <span>Browse Templates</span>
+          </button>
+        </div>
       </div>
 
       <form onSubmit={(e) => { e.preventDefault(); if (isFormValid) onGenerate(); }} className="space-y-5">
