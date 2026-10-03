@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import { Sidebar } from './components/Sidebar';
 import { Navbar } from './components/Navbar';
 import { GenerationPipeline } from './components/GenerationPipeline';
@@ -8,6 +9,7 @@ import { HistoryDrawer } from './components/HistoryDrawer';
 import { TemplatesModal } from './components/TemplatesModal';
 import { PromptCompilerInspectorModal } from './components/PromptCompilerInspectorModal';
 import { SettingsModal } from './components/SettingsModal';
+import { PrivacyPage } from './components/PrivacyPage';
 
 import {
   GenerateRequest, GenerationResponse, HealthStatus,
@@ -205,7 +207,7 @@ export const App: React.FC = () => {
     });
   };
 
-  return (
+  const WorkspaceView = (
     <div className="min-h-screen flex bg-[#0b0f19] text-slate-100 font-sans antialiased">
       {/* SaaS Sidebar */}
       <Sidebar
@@ -287,6 +289,13 @@ export const App: React.FC = () => {
         health={health}
       />
     </div>
+  );
+
+  return (
+    <Routes>
+      <Route path="/" element={WorkspaceView} />
+      <Route path="/privacy" element={<PrivacyPage />} />
+    </Routes>
   );
 };
 
