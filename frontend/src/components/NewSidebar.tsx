@@ -1,210 +1,175 @@
-import React, { useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import React from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import {
-  Sparkles, LayoutDashboard, Radio, PenTool, Image, Calendar,
-  CheckSquare, Send, BarChart2, Linkedin, Instagram, Zap,
-  Mic2, Settings, Shield, ChevronLeft, ChevronRight, Menu, X
+  LayoutDashboard,
+  Radio,
+  PenTool,
+  Image as ImageIcon,
+  Calendar,
+  CheckSquare,
+  Send,
+  Share2,
+  Linkedin,
+  Instagram,
+  Zap,
+  Mic,
+  BarChart3,
+  Settings,
+  Sparkles,
+  ShieldAlert
 } from 'lucide-react';
 import { HealthStatus } from '../types/generation';
 
-interface NewSidebarProps {
-  health: HealthStatus | null;
+interface SidebarProps {
+  health?: HealthStatus | null;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 }
 
-// ─── Navigation Structure ─────────────────────────────────────────────────────
-const NAV_GROUPS = [
+interface NavItem {
+  to: string;
+  label: string;
+  icon: React.ElementType;
+  badge?: string;
+  badgeVariant?: 'default' | 'purple' | 'amber';
+}
+
+interface NavSection {
+  title: string;
+  items: NavItem[];
+}
+
+const NAV_SECTIONS: NavSection[] = [
   {
-    label: 'MAIN',
+    title: 'HOME',
     items: [
-      { to: '/',            label: 'Dashboard',         icon: LayoutDashboard },
-      { to: '/trend-radar', label: 'Trend Radar',       icon: Radio },
-      { to: '/studio',      label: 'Content Studio',    icon: PenTool },
-      { to: '/image-studio',label: 'Image Studio',      icon: Image },
-      { to: '/calendar',    label: 'Content Calendar',  icon: Calendar },
-      { to: '/approvals',   label: 'Approval Queue',    icon: CheckSquare },
-      { to: '/published',   label: 'Published Posts',   icon: Send },
-      { to: '/analytics',   label: 'Analytics',         icon: BarChart2 },
+      { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/trend-radar', label: 'Trend Radar', icon: Radio, badge: 'Live', badgeVariant: 'purple' },
+      { to: '/studio', label: 'Content Studio', icon: PenTool },
+      { to: '/image-studio', label: 'Image Studio', icon: ImageIcon, badge: 'New', badgeVariant: 'purple' },
     ],
   },
   {
-    label: 'SOCIAL ACCOUNTS',
+    title: 'CONTENT',
     items: [
-      { to: '/social/linkedin',  label: 'LinkedIn',  icon: Linkedin },
+      { to: '/calendar', label: 'Content Calendar', icon: Calendar },
+      { to: '/approvals', label: 'Approval Queue', icon: CheckSquare, badge: '2', badgeVariant: 'amber' },
+      { to: '/published', label: 'Published Posts', icon: Send },
+    ],
+  },
+  {
+    title: 'SOCIAL',
+    items: [
+      { to: '/social/linkedin', label: 'LinkedIn', icon: Linkedin },
       { to: '/social/instagram', label: 'Instagram', icon: Instagram },
     ],
   },
   {
-    label: 'AUTOMATION',
+    title: 'AUTOMATION',
     items: [
       { to: '/automation', label: 'Automation', icon: Zap },
-      { to: '/ai-voice',   label: 'AI Voice',   icon: Mic2 },
+      { to: '/ai-voice', label: 'AI Voice', icon: Mic },
+      { to: '/analytics', label: 'Analytics', icon: BarChart3 },
     ],
   },
   {
-    label: 'SYSTEM',
+    title: 'SYSTEM',
     items: [
       { to: '/settings', label: 'Settings', icon: Settings },
     ],
   },
 ];
 
-export const NewSidebar: React.FC<NewSidebarProps> = ({ health }) => {
-  const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const navigate = useNavigate();
+export const NewSidebar: React.FC<SidebarProps> = ({ health }) => {
+  const location = useLocation();
 
-  const SidebarContent = () => (
-    <div className="flex flex-col h-full">
-      {/* Brand Header */}
-      <div className={`p-4 border-b border-slate-800/60 flex items-center justify-between flex-shrink-0`}>
-        <button
-          onClick={() => navigate('/')}
-          className={`flex items-center gap-2.5 group ${collapsed ? 'justify-center w-full' : ''}`}
-        >
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 via-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-brand-500/25 flex-shrink-0 group-hover:scale-105 transition-transform">
-            <Sparkles className="w-4 h-4 text-white" />
+  return (
+    <aside className="w-64 bg-[#0d1117] border-r border-white/[0.07] flex flex-col flex-shrink-0 h-screen sticky top-0 z-30 select-none">
+      {/* ── Brand Logo ────────────────────────────────────────────── */}
+      <div className="p-6 pb-5 border-b border-white/[0.06] flex items-center justify-between">
+        <NavLink to="/" className="flex items-center gap-3 group">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-indigo-600/30 group-hover:scale-105 transition-transform">
+            <Sparkles className="w-4 h-4" />
           </div>
-          {!collapsed && (
-            <div className="min-w-0">
-              <h1 className="font-bold text-sm text-white tracking-tight truncate">CopyForge AI</h1>
-              <p className="text-[10px] text-slate-400 leading-none mt-0.5">AI Content Automation</p>
-            </div>
-          )}
-        </button>
-
-        {!collapsed && (
-          <button
-            onClick={() => setCollapsed(true)}
-            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors ml-1 flex-shrink-0"
-            title="Collapse sidebar"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-        )}
+          <div>
+            <span className="font-display font-extrabold text-base text-white tracking-tight flex items-center gap-1">
+              CopyForge<span className="text-indigo-400">.</span>
+            </span>
+            <span className="text-[10px] uppercase font-mono text-slate-400 tracking-wider block">
+              AI Intelligence
+            </span>
+          </div>
+        </NavLink>
       </div>
 
-      {/* Collapsed expand button */}
-      {collapsed && (
-        <button
-          onClick={() => setCollapsed(false)}
-          className="mx-auto mt-3 mb-1 p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-300 transition-colors"
-          title="Expand sidebar"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
-      )}
-
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-4">
-        {NAV_GROUPS.map((group) => (
-          <div key={group.label}>
-            {!collapsed && (
-              <p className="text-[9px] font-bold text-slate-600 uppercase tracking-widest px-2 mb-1.5">
-                {group.label}
-              </p>
-            )}
+      {/* ── Navigation List ────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-6">
+        {NAV_SECTIONS.map((section) => (
+          <div key={section.title}>
+            <p className="px-3 mb-2 text-[10px] font-mono font-semibold uppercase tracking-widest text-slate-500">
+              {section.title}
+            </p>
             <div className="space-y-0.5">
-              {group.items.map(({ to, label, icon: Icon }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  end={to === '/'}
-                  onClick={() => setMobileOpen(false)}
-                  className={({ isActive }) =>
-                    `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-all group
-                    ${isActive
-                      ? 'bg-brand-500/15 text-brand-300 border border-brand-500/30'
-                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-                    }
-                    ${collapsed ? 'justify-center' : ''}`
-                  }
-                  title={collapsed ? label : undefined}
-                >
-                  <Icon className="w-4 h-4 flex-shrink-0" />
-                  {!collapsed && <span className="truncate">{label}</span>}
-                </NavLink>
-              ))}
+              {section.items.map((item) => {
+                const Icon = item.icon;
+                const isActive = item.to === '/'
+                  ? location.pathname === '/'
+                  : location.pathname.startsWith(item.to);
+
+                return (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all group ${
+                      isActive
+                        ? 'bg-indigo-600/15 text-indigo-300 font-semibold border border-indigo-500/20 shadow-sm shadow-indigo-500/5'
+                        : 'text-slate-400 hover:text-slate-100 hover:bg-white/[0.04]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <Icon className={`w-4 h-4 transition-colors ${
+                        isActive ? 'text-indigo-400' : 'text-slate-400 group-hover:text-slate-200'
+                      }`} />
+                      <span>{item.label}</span>
+                    </div>
+
+                    {item.badge && (
+                      <span className={`text-[10px] font-semibold px-2 py-0.2 rounded-full ${
+                        item.badgeVariant === 'purple'
+                          ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
+                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                      }`}>
+                        {item.badge}
+                      </span>
+                    )}
+                  </NavLink>
+                );
+              })}
             </div>
           </div>
         ))}
-      </nav>
-
-      {/* Footer */}
-      <div className="p-3 border-t border-slate-800/60 bg-slate-950/40 flex-shrink-0">
-        {!collapsed ? (
-          <>
-            <div className="flex items-center justify-between text-xs mb-1.5">
-              <span className="text-slate-400 flex items-center gap-1.5">
-                <Shield className="w-3 h-3 text-emerald-400" />
-                AI Engine
-              </span>
-              <span className="flex items-center gap-1 text-emerald-400 bg-emerald-400/10 px-1.5 py-0.5 rounded border border-emerald-400/20 font-mono text-[10px]">
-                Active
-              </span>
-            </div>
-            <div className="text-[10px] text-slate-500 font-mono flex justify-between mb-2">
-              <span>Model:</span>
-              <span className="text-slate-300">{health?.openai_model || 'gpt-4o-mini'}</span>
-            </div>
-            <NavLink
-              to="/privacy"
-              className="flex items-center gap-1.5 text-[10px] text-slate-600 hover:text-slate-400 transition-colors"
-            >
-              <Shield className="w-3 h-3" />
-              Privacy Policy
-            </NavLink>
-          </>
-        ) : (
-          <NavLink to="/settings" className="flex justify-center text-slate-500 hover:text-slate-300">
-            <Settings className="w-4 h-4" />
-          </NavLink>
-        )}
       </div>
-    </div>
-  );
 
-  return (
-    <>
-      {/* Mobile Hamburger */}
-      <button
-        onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-xl bg-[#0d121f] border border-slate-800 text-slate-300 shadow-lg"
-      >
-        <Menu className="w-5 h-5" />
-      </button>
+      {/* ── Sidebar Footer / Engine Health ─────────────────────────── */}
+      <div className="p-4 border-t border-white/[0.06] bg-slate-950/40">
+        <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <div>
+              <p className="text-xs font-medium text-white">AI Engine Active</p>
+              <p className="text-[10px] text-slate-500">{health?.openai_model || 'gpt-4o-mini'}</p>
+            </div>
+          </div>
+        </div>
 
-      {/* Mobile Overlay */}
-      {mobileOpen && (
-        <div
-          className="lg:hidden fixed inset-0 z-40 bg-black/60 backdrop-blur-sm"
-          onClick={() => setMobileOpen(false)}
-        />
-      )}
-
-      {/* Mobile Drawer */}
-      <aside
-        className={`lg:hidden fixed left-0 top-0 bottom-0 z-50 bg-[#0d121f] border-r border-slate-800/80 transition-transform duration-300 ${
-          mobileOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-        style={{ width: 220 }}
-      >
-        <button
-          onClick={() => setMobileOpen(false)}
-          className="absolute top-4 right-4 p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
-        >
-          <X className="w-4 h-4" />
-        </button>
-        <SidebarContent />
-      </aside>
-
-      {/* Desktop Sidebar */}
-      <aside
-        className={`hidden lg:flex flex-col bg-[#0d121f] border-r border-slate-800/80 h-screen sticky top-0 z-30 transition-all duration-300 ${
-          collapsed ? 'w-14' : 'w-52'
-        }`}
-      >
-        <SidebarContent />
-      </aside>
-    </>
+        <div className="mt-3 flex items-center justify-between px-1 text-[11px] text-slate-500">
+          <NavLink to="/privacy" className="hover:text-slate-300 transition-colors">Privacy Policy</NavLink>
+          <span>v2.4 Editorial</span>
+        </div>
+      </div>
+    </aside>
   );
 };

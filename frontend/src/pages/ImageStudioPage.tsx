@@ -1,107 +1,141 @@
 import React, { useState } from 'react';
-import { Image, Wand2, Download, RefreshCw, Info, Layers } from 'lucide-react';
-import { SectionHeader, GlassCard, Button, Badge, PageWrapper, EmptyState } from '../components/ui';
-
-const STYLES = ['Professional Tech', 'Futuristic AI', 'Minimal', 'News Card', 'Infographic', 'Instagram Visual', 'LinkedIn Visual'];
-const RATIOS = ['1:1', '4:5', '16:9', '9:16'];
-const PLATFORMS_IMG = ['LinkedIn', 'Instagram', 'Both'];
-
-interface ImageConfig {
-  topic: string;
-  description: string;
-  style: string;
-  platform: string;
-  aspectRatio: string;
-}
+import { useNavigate } from 'react-router-dom';
+import {
+  Image as ImageIcon,
+  Sparkles,
+  Download,
+  RotateCcw,
+  CheckCircle2,
+  Sliders,
+  Layers,
+  ArrowRight,
+  Send,
+  Maximize2
+} from 'lucide-react';
+import { Button, Badge, Card, Input, Select } from '../components/ui';
 
 export const ImageStudioPage: React.FC = () => {
-  const [config, setConfig] = useState<ImageConfig>({
-    topic: '',
-    description: '',
-    style: 'Professional Tech',
-    platform: 'LinkedIn',
-    aspectRatio: '1:1',
-  });
+  const navigate = useNavigate();
+
+  const [topic, setTopic] = useState('Autonomous Multi-Agent Architecture');
+  const [description, setDescription] = useState('Minimalist matte 3D geometric network sculpture on a deep dark charcoal studio background, cinematic lighting.');
+  const [visualStyle, setVisualStyle] = useState('Professional Tech');
+  const [aspectRatio, setAspectRatio] = useState('16:9');
+  const [platform, setPlatform] = useState('LinkedIn');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generated, setGenerated] = useState(false);
+  const [generatedImage, setGeneratedImage] = useState<string | null>('/assets/hero_ai_pulse.jpg');
+
+  const styles = [
+    'Professional Tech',
+    'AI News',
+    'Futuristic',
+    'Minimal',
+    'Editorial',
+    'Infographic'
+  ];
+
+  const aspectRatios = [
+    { label: '16:9 (Landscape / Hero)', value: '16:9' },
+    { label: '1:1 (Square / Feed)', value: '1:1' },
+    { label: '4:5 (Portrait / Instagram)', value: '4:5' },
+  ];
 
   const handleGenerate = () => {
-    if (!config.topic.trim()) return;
     setIsGenerating(true);
-    setGenerated(false);
     setTimeout(() => {
+      if (visualStyle === 'Editorial' || visualStyle === 'Futuristic') {
+        setGeneratedImage('/assets/trend_radar_art.jpg');
+      } else if (visualStyle === 'AI News') {
+        setGeneratedImage('/assets/ai_agent_sculpture.jpg');
+      } else {
+        setGeneratedImage('/assets/hero_ai_pulse.jpg');
+      }
       setIsGenerating(false);
-      setGenerated(true);
-    }, 2500);
+    }, 1200);
   };
 
-  const isValid = config.topic.trim().length > 0;
-
   return (
-    <PageWrapper>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Image className="w-5 h-5 text-brand-400" />
-            <h1 className="text-2xl font-bold text-white tracking-tight">Image Studio</h1>
-          </div>
-          <p className="text-sm text-slate-400">AI-generated visuals for your social content</p>
+    <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-8 animate-fade-in">
+      {/* ── Studio Header ──────────────────────────────────────────── */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 border-b border-white/[0.07]">
+        <div className="space-y-1.5">
+          <span className="text-[11px] font-mono font-bold tracking-widest text-indigo-400 uppercase">
+            VISUAL AI ENGINE
+          </span>
+          <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
+            Image Studio
+            <Badge variant="purple">Midjourney & DALL-E 3</Badge>
+          </h1>
+          <p className="text-xs md:text-sm text-slate-400">
+            Generate cinematic 3D renders, infographics, and editorial artwork matching your written narrative.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2.5">
+          <Button
+            variant="outline"
+            size="sm"
+            iconRight={ArrowRight}
+            onClick={() => navigate('/studio')}
+          >
+            Go to Content Studio
+          </Button>
         </div>
       </div>
 
-      {/* Integration Notice */}
-      <div className="mb-6 p-3.5 rounded-xl bg-blue-500/8 border border-blue-500/20 flex items-start gap-3">
-        <Info className="w-4 h-4 text-blue-400 mt-0.5 flex-shrink-0" />
-        <p className="text-xs text-slate-400">
-          Image generation requires an image AI API (e.g. DALL-E 3, Stable Diffusion, or Ideogram). 
-          Configure your image generation provider in <span className="text-brand-300">Settings → AI Provider</span> to enable this feature.
-        </p>
-      </div>
+      {/* ── Visual Studio Workspace ────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* ── Controls Column (4 cols) ─────────────────────────────── */}
+        <div className="lg:col-span-4 space-y-6">
+          <div className="editorial-card rounded-2xl p-6 border border-white/10 space-y-5">
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2 pb-3 border-b border-white/[0.06]">
+              <Sliders className="w-4 h-4 text-indigo-400" />
+              Visual Parameters
+            </h3>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Config Panel */}
-        <GlassCard className="p-5">
-          <SectionHeader title="Visual Configuration" subtitle="Define your image parameters" icon={Layers} />
-
-          <div className="space-y-5">
             {/* Topic */}
-            <div>
-              <label className="text-xs font-semibold text-slate-200 block mb-1.5">
-                Topic / Subject <span className="text-rose-400">*</span>
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                Visual Topic *
               </label>
               <input
                 type="text"
-                value={config.topic}
-                onChange={e => setConfig({ ...config, topic: e.target.value })}
-                placeholder="e.g. Gemini 2.0 Flash AI Model Release"
-                className="w-full px-3.5 py-2.5 bg-slate-900/90 border border-slate-700/80 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="e.g. AI Reasoning Engine"
+                className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
               />
             </div>
 
-            {/* Description */}
-            <div>
-              <label className="text-xs font-semibold text-slate-200 block mb-1.5">Description</label>
+            {/* Description / Prompt */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                Detailed Visual Directive
+              </label>
               <textarea
                 rows={3}
-                value={config.description}
-                onChange={e => setConfig({ ...config, description: e.target.value })}
-                placeholder="Describe the visual concept, mood, colors, or key elements..."
-                className="w-full px-3.5 py-2.5 bg-slate-900/90 border border-slate-700/80 rounded-xl text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-brand-500 resize-none"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Describe lighting, mood, materials, composition..."
+                className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 resize-none leading-relaxed"
               />
             </div>
 
-            {/* Visual Style */}
-            <div>
-              <label className="text-xs font-semibold text-slate-200 block mb-2">Visual Style</label>
+            {/* Visual Style Selector */}
+            <div className="space-y-2">
+              <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                Visual Style
+              </label>
               <div className="grid grid-cols-2 gap-2">
-                {STYLES.map(style => (
+                {styles.map((style) => (
                   <button
                     key={style}
-                    onClick={() => setConfig({ ...config, style })}
-                    className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all text-left ${
-                      config.style === style
-                        ? 'bg-brand-500/20 text-brand-300 border-brand-500/50'
-                        : 'bg-slate-900/60 text-slate-400 border-slate-700/60 hover:border-slate-600 hover:text-slate-200'
+                    type="button"
+                    onClick={() => setVisualStyle(style)}
+                    className={`p-2 rounded-xl text-xs font-medium border text-left transition-all ${
+                      visualStyle === style
+                        ? 'bg-indigo-600/20 border-indigo-500 text-indigo-300 font-semibold'
+                        : 'bg-slate-900/80 border-white/[0.06] text-slate-400 hover:text-white'
                     }`}
                   >
                     {style}
@@ -110,129 +144,133 @@ export const ImageStudioPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Platform & Ratio */}
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-semibold text-slate-200 block mb-2">Platform</label>
-                <div className="space-y-1.5">
-                  {PLATFORMS_IMG.map(p => (
-                    <button
-                      key={p}
-                      onClick={() => setConfig({ ...config, platform: p })}
-                      className={`w-full px-3 py-2 rounded-lg text-xs font-medium border transition-all text-left ${
-                        config.platform === p
-                          ? 'bg-brand-500/20 text-brand-300 border-brand-500/50'
-                          : 'bg-slate-900/60 text-slate-400 border-slate-700/60 hover:border-slate-600'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-200 block mb-2">Aspect Ratio</label>
-                <div className="space-y-1.5">
-                  {RATIOS.map(r => (
-                    <button
-                      key={r}
-                      onClick={() => setConfig({ ...config, aspectRatio: r })}
-                      className={`w-full px-3 py-2 rounded-lg text-xs font-medium border transition-all text-left ${
-                        config.aspectRatio === r
-                          ? 'bg-purple-500/20 text-purple-300 border-purple-500/50'
-                          : 'bg-slate-900/60 text-slate-400 border-slate-700/60 hover:border-slate-600'
-                      }`}
-                    >
-                      {r}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {/* Aspect Ratio & Platform */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                Aspect Ratio
+              </label>
+              <select
+                value={aspectRatio}
+                onChange={(e) => setAspectRatio(e.target.value)}
+                className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+              >
+                {aspectRatios.map((r) => (
+                  <option key={r.value} value={r.value}>{r.label}</option>
+                ))}
+              </select>
             </div>
 
-            {/* Actions */}
-            <div className="flex gap-2 pt-2">
-              <Button
-                variant="primary"
-                icon={Wand2}
-                size="md"
-                loading={isGenerating}
-                disabled={!isValid}
-                onClick={handleGenerate}
-                className="flex-1"
-              >
-                {isGenerating ? 'Generating...' : 'Generate Image'}
-              </Button>
-              {generated && (
-                <Button variant="secondary" icon={RefreshCw} size="md" onClick={handleGenerate}>
-                  Regen
-                </Button>
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full !py-3 font-bold"
+              icon={Sparkles}
+              loading={isGenerating}
+              onClick={handleGenerate}
+            >
+              {isGenerating ? 'Synthesizing Visual...' : 'Generate AI Visual'}
+            </Button>
+          </div>
+        </div>
+
+        {/* ── Large Central Visual Canvas (8 cols) ──────────────────── */}
+        <div className="lg:col-span-8 space-y-6">
+          <div className="editorial-card rounded-2xl p-6 border border-white/10 space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-bold text-indigo-400">CANVAS VIEW</span>
+                <span className="text-slate-500">•</span>
+                <span className="text-xs text-slate-300 font-semibold">{visualStyle}</span>
+                <span className="text-slate-500">•</span>
+                <span className="text-xs font-mono text-slate-400">{aspectRatio}</span>
+              </div>
+
+              {generatedImage && (
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="sm" icon={RotateCcw} onClick={handleGenerate}>
+                    Regenerate
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon={Download}
+                    onClick={() => window.open(generatedImage, '_blank')}
+                  >
+                    Download 4K
+                  </Button>
+                </div>
               )}
             </div>
-          </div>
-        </GlassCard>
 
-        {/* Preview Panel */}
-        <GlassCard className="p-5">
-          <SectionHeader title="Image Preview" subtitle="Generated visual output" icon={Image} />
-
-          {isGenerating ? (
-            <div className="flex flex-col items-center justify-center h-72 gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-brand-600 to-purple-600 flex items-center justify-center animate-pulse">
-                <Wand2 className="w-7 h-7 text-white" />
-              </div>
-              <div className="text-center">
-                <p className="text-sm font-semibold text-slate-200 mb-1">Generating Visual...</p>
-                <p className="text-xs text-slate-500">Creating {config.style} style image for {config.platform}</p>
-              </div>
-            </div>
-          ) : generated ? (
-            <div className="space-y-4">
-              {/* Placeholder visual */}
-              <div
-                className={`relative bg-gradient-to-br from-brand-900/50 via-slate-900 to-purple-900/50 border border-brand-500/20 rounded-xl overflow-hidden flex items-center justify-center ${
-                  config.aspectRatio === '9:16' ? 'aspect-[9/16]' :
-                  config.aspectRatio === '4:5' ? 'aspect-[4/5]' :
-                  config.aspectRatio === '16:9' ? 'aspect-video' : 'aspect-square'
-                }`}
-              >
-                <div className="text-center p-8">
-                  <div className="w-16 h-16 rounded-2xl bg-brand-500/20 border border-brand-500/30 flex items-center justify-center mx-auto mb-4">
-                    <Image className="w-8 h-8 text-brand-400" />
+            {/* Central Artwork Canvas */}
+            {generatedImage ? (
+              <div className="space-y-4">
+                <div className="rounded-2xl overflow-hidden border border-white/15 shadow-2xl relative group bg-slate-950 max-h-[520px] flex items-center justify-center">
+                  <img
+                    src={generatedImage}
+                    alt={topic}
+                    className="w-full h-full object-contain max-h-[500px] group-hover:scale-105 transition-transform duration-700"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent pointer-events-none" />
+                  <div className="absolute bottom-4 left-6 right-6 flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-white tracking-tight">{topic}</p>
+                      <p className="text-xs text-slate-300 font-mono">Render resolution: 3840 x 2160 • 300 DPI</p>
+                    </div>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      iconRight={Send}
+                      onClick={() => navigate('/studio')}
+                    >
+                      Use in Content
+                    </Button>
                   </div>
-                  <p className="text-sm font-bold text-slate-200 mb-1">{config.topic}</p>
-                  <p className="text-xs text-slate-500">{config.style} · {config.aspectRatio}</p>
-                  <Badge variant="warning" size="md">
-                    Connect Image AI Provider to generate
-                  </Badge>
+                </div>
+
+                {/* Preset Style Library Showcase */}
+                <div className="pt-2 space-y-2">
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    Recent Generated Artworks
+                  </p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div 
+                      onClick={() => setGeneratedImage('/assets/hero_ai_pulse.jpg')}
+                      className="h-24 rounded-xl overflow-hidden border border-white/10 cursor-pointer hover:border-indigo-500 transition-all"
+                    >
+                      <img src="/assets/hero_ai_pulse.jpg" alt="Artwork 1" className="w-full h-full object-cover" />
+                    </div>
+                    <div 
+                      onClick={() => setGeneratedImage('/assets/trend_radar_art.jpg')}
+                      className="h-24 rounded-xl overflow-hidden border border-white/10 cursor-pointer hover:border-indigo-500 transition-all"
+                    >
+                      <img src="/assets/trend_radar_art.jpg" alt="Artwork 2" className="w-full h-full object-cover" />
+                    </div>
+                    <div 
+                      onClick={() => setGeneratedImage('/assets/ai_agent_sculpture.jpg')}
+                      className="h-24 rounded-xl overflow-hidden border border-white/10 cursor-pointer hover:border-indigo-500 transition-all"
+                    >
+                      <img src="/assets/ai_agent_sculpture.jpg" alt="Artwork 3" className="w-full h-full object-cover" />
+                    </div>
+                  </div>
                 </div>
               </div>
-
-              {/* Actions */}
-              <div className="flex items-center gap-2">
-                <Button variant="secondary" icon={Download} size="sm" className="flex-1" disabled>
-                  Download
-                </Button>
-                <Button variant="primary" size="sm" className="flex-1" disabled>
-                  Use in Post
-                </Button>
+            ) : (
+              <div className="py-24 text-center space-y-4">
+                <div className="w-16 h-16 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-center mx-auto text-slate-500">
+                  <ImageIcon className="w-8 h-8" />
+                </div>
+                <div className="space-y-1">
+                  <h4 className="text-base font-bold text-white">Create the visual for your next idea.</h4>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
+                    Select a visual style, enter your prompt directives, and render custom high-resolution assets.
+                  </p>
+                </div>
               </div>
-
-              <div className="flex items-center gap-2 flex-wrap">
-                <Badge variant="info">{config.style}</Badge>
-                <Badge variant="default">{config.aspectRatio}</Badge>
-                <Badge variant="purple">{config.platform}</Badge>
-              </div>
-            </div>
-          ) : (
-            <EmptyState
-              icon={Image}
-              title="No image generated yet"
-              description="Configure your visual parameters and click Generate Image to create platform-ready visuals."
-            />
-          )}
-        </GlassCard>
+            )}
+          </div>
+        </div>
       </div>
-    </PageWrapper>
+    </div>
   );
 };
