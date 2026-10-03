@@ -2,6 +2,7 @@ import base64
 import hashlib
 import logging
 import sqlite3
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -11,17 +12,19 @@ from fastapi.testclient import TestClient
 
 from app.api import linkedin
 from app.core.config import settings
+from app.database.db import database_url
 from app.main import app
 
 
 @pytest.fixture
 def oauth_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DB_PATH", str(tmp_path / "oauth-test.db"))
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("LINKEDIN_CLIENT_ID", "test-client-id")
     monkeypatch.setenv("LINKEDIN_CLIENT_SECRET", "test-client-secret")
     monkeypatch.setenv("LINKEDIN_REDIRECT_URI", "http://localhost:8000/auth/linkedin/callback")
     monkeypatch.setenv("SECRET_KEY", "test-secret-key-that-is-long-enough-32")
-    monkeypatch.setenv("FRONTEND_ORIGIN", "http://localhost:3000")
+    monkeypatch.setenv("FRONTEND_URL", "http://localhost:3000")
     with TestClient(app) as client:
         yield client
 
@@ -121,6 +124,20 @@ def test_authorization_redirect_uses_official_linkedin_oauth(oauth_client):
     assert linkedin.SESSION_COOKIE in oauth_client.cookies
 
 
+def test_production_redirect_uses_configured_frontend(oauth_client, monkeypatch):
+    _mock_linkedin_http(monkeypatch)
+    monkeypatch.setenv("FRONTEND_URL", "https://copyforge-aiauto.netlify.app")
+    state, _ = _authorization_state(oauth_client)
+    callback = oauth_client.get(
+        "/auth/linkedin/callback",
+        params={"code": "valid-code", "state": state},
+        follow_redirects=False,
+    )
+    assert callback.headers["location"].startswith(
+        "https://copyforge-aiauto.netlify.app/social/linkedin?linkedin=connected#session="
+    )
+
+
 def test_successful_callback_stores_encrypted_token_and_status(oauth_client, monkeypatch, tmp_path):
     _mock_linkedin_http(monkeypatch)
     state, _ = _authorization_state(oauth_client)
@@ -131,7 +148,10 @@ def test_successful_callback_stores_encrypted_token_and_status(oauth_client, mon
         follow_redirects=False,
     )
     assert callback.status_code == 302
-    assert callback.headers["location"] == "http://localhost:3000/social/linkedin?linkedin=connected"
+    assert callback.headers["location"].startswith(
+        "http://localhost:3000/social/linkedin?linkedin=connected#session="
+    )
+    browser_session = callback.headers["location"].split("#session=", 1)[1]
 
     status_response = oauth_client.get("/api/social/linkedin/status")
     status_data = status_response.json()
@@ -143,6 +163,17 @@ def test_successful_callback_stores_encrypted_token_and_status(oauth_client, mon
     assert status_data["profile_image"] == "https://media.example/profile.jpg"
     assert "access_token" not in status_data
     assert "test-access-token" not in status_response.text
+
+    browser_status = oauth_client.get(
+        "/api/social/linkedin/status",
+        headers={"Authorization": f"Bearer {browser_session}"},
+    )
+    assert browser_status.json()["connected"] is True
+    accounts = oauth_client.get(
+        "/api/social/accounts",
+        headers={"Authorization": f"Bearer {browser_session}"},
+    )
+    assert accounts.json()["accounts"][0]["display_name"] == "CopyForge Test Member"
 
     database_path = tmp_path / "oauth-test.db"
     with sqlite3.connect(database_path) as database:
@@ -157,7 +188,10 @@ def test_successful_callback_stores_encrypted_token_and_status(oauth_client, mon
 
     disconnected = oauth_client.post(
         "/api/social/linkedin/disconnect",
-        headers={"Origin": "http://localhost:3000"},
+        headers={
+            "Origin": "http://localhost:3000",
+            "Authorization": f"Bearer {browser_session}",
+        },
     )
     assert disconnected.status_code == 200
     assert disconnected.json() == {"disconnected": True}
@@ -248,3 +282,43 @@ def test_disconnect_requires_configured_frontend_origin(oauth_client):
         headers={"Origin": "https://malicious.example"},
     )
     assert response.status_code == 403
+
+
+def test_health_cors_and_social_accounts_endpoints(oauth_client):
+    health = oauth_client.get("/health")
+    assert health.status_code == 200
+    assert health.json() == {"status": "healthy"}
+
+    preflight = oauth_client.options(
+        "/api/social/linkedin/status",
+        headers={
+            "Origin": "https://copyforge-aiauto.netlify.app",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization",
+        },
+    )
+    assert preflight.status_code == 200
+    assert preflight.headers["access-control-allow-origin"] == "https://copyforge-aiauto.netlify.app"
+    assert preflight.headers["access-control-allow-credentials"] == "true"
+
+    accounts = oauth_client.get("/api/social/accounts")
+    assert accounts.status_code == 200
+    assert accounts.json() == {"accounts": [{"configured": True, "connected": False}]}
+
+
+def test_database_url_prefers_postgresql_when_configured(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://copyforge:secret@db.example/copyforge")
+    assert database_url() == "postgresql+asyncpg://copyforge:secret@db.example/copyforge"
+
+
+def test_frontend_linkedin_service_uses_configured_api_base_without_localhost():
+    source_path = (
+        Path(__file__).resolve().parents[2]
+        / "frontend"
+        / "src"
+        / "services"
+        / "linkedinOAuth.ts"
+    )
+    source = source_path.read_text(encoding="utf-8")
+    assert "VITE_API_BASE_URL" in source
+    assert "localhost:8000" not in source

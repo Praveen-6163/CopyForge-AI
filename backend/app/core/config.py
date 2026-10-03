@@ -21,6 +21,10 @@ class Settings:
     @property
     def DB_PATH(self) -> str:
         return os.getenv("DB_PATH", "copyforge.db")
+
+    @property
+    def DATABASE_URL(self) -> str:
+        return os.getenv("DATABASE_URL", "").strip()
         
     @property
     def PORT(self) -> int:
@@ -43,8 +47,31 @@ class Settings:
         return os.getenv("LINKEDIN_REDIRECT_URI", "").strip()
 
     @property
+    def FRONTEND_URL(self) -> str:
+        return os.getenv(
+            "FRONTEND_URL",
+            os.getenv("FRONTEND_ORIGIN", "http://localhost:3000"),
+        ).strip().rstrip("/")
+
+    @property
     def FRONTEND_ORIGIN(self) -> str:
-        return os.getenv("FRONTEND_ORIGIN", "http://localhost:3000").strip().rstrip("/")
+        return self.FRONTEND_URL
+
+    @property
+    def CORS_ALLOWED_ORIGINS(self) -> list[str]:
+        configured = os.getenv("CORS_ALLOWED_ORIGINS", "")
+        origins = {
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "https://copyforge-aiauto.netlify.app",
+            self.FRONTEND_URL,
+        }
+        origins.update(
+            origin.strip().rstrip("/")
+            for origin in configured.split(",")
+            if origin.strip() and origin.strip() != "*"
+        )
+        return sorted(origins)
 
     @property
     def LINKEDIN_CONFIGURED(self) -> bool:

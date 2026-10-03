@@ -1,14 +1,15 @@
+import datetime
 import json
 import uuid
-import datetime
-from typing import List, Optional, Dict, Any
-import aiosqlite
-from app.core.config import settings
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import text
+
+from app.database.db import get_db
+
 
 class HistoryService:
-    """
-    CRUD Service for SQLite History and Bookmarks.
-    """
+    """CRUD service for generation history and bookmarks."""
 
     @classmethod
     async def save_generation(
@@ -22,28 +23,52 @@ class HistoryService:
         prompt_parameters: Dict[str, Any],
         compiled_prompt: str,
         generated_content: str,
-        generation_id: Optional[str] = None
+        generation_id: Optional[str] = None,
     ) -> str:
         record_id = generation_id or str(uuid.uuid4())
         created_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
         params_json = json.dumps(prompt_parameters)
 
-        async with aiosqlite.connect(settings.DB_PATH) as db:
+        async with get_db() as db:
             await db.execute(
-                """
-                INSERT OR REPLACE INTO history (
-                    id, product_name, product_description, platform, tone,
-                    audience, objective, prompt_parameters_json, compiled_prompt,
-                    generated_content, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    record_id, product_name, product_description, platform, tone,
-                    audience, objective, params_json, compiled_prompt,
-                    generated_content, created_at
-                )
+                text(
+                    """
+                    INSERT INTO history (
+                        id, product_name, product_description, platform, tone,
+                        audience, objective, prompt_parameters_json, compiled_prompt,
+                        generated_content, created_at
+                    ) VALUES (
+                        :id, :product_name, :product_description, :platform, :tone,
+                        :audience, :objective, :prompt_parameters_json, :compiled_prompt,
+                        :generated_content, :created_at
+                    )
+                    ON CONFLICT(id) DO UPDATE SET
+                        product_name = excluded.product_name,
+                        product_description = excluded.product_description,
+                        platform = excluded.platform,
+                        tone = excluded.tone,
+                        audience = excluded.audience,
+                        objective = excluded.objective,
+                        prompt_parameters_json = excluded.prompt_parameters_json,
+                        compiled_prompt = excluded.compiled_prompt,
+                        generated_content = excluded.generated_content,
+                        created_at = excluded.created_at
+                    """
+                ),
+                {
+                    "id": record_id,
+                    "product_name": product_name,
+                    "product_description": product_description,
+                    "platform": platform,
+                    "tone": tone,
+                    "audience": audience,
+                    "objective": objective,
+                    "prompt_parameters_json": params_json,
+                    "compiled_prompt": compiled_prompt,
+                    "generated_content": generated_content,
+                    "created_at": created_at,
+                },
             )
-            await db.commit()
         return record_id
 
     @classmethod
@@ -53,95 +78,82 @@ class HistoryService:
         platform: Optional[str] = None,
         tone: Optional[str] = None,
         only_saved: bool = False,
-        limit: int = 50
+        limit: int = 50,
     ) -> List[Dict[str, Any]]:
-        async with aiosqlite.connect(settings.DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            
-            query = "SELECT * FROM history WHERE 1=1"
-            params = []
+        query = "SELECT * FROM history WHERE 1=1"
+        params: dict[str, Any] = {"limit": limit}
 
-            if search and search.strip():
-                query += " AND (product_name LIKE ? OR generated_content LIKE ?)"
-                term = f"%{search.strip()}%"
-                params.extend([term, term])
+        if search and search.strip():
+            query += " AND (product_name LIKE :search OR generated_content LIKE :search)"
+            params["search"] = f"%{search.strip()}%"
+        if platform and platform.strip() and platform != "All":
+            query += " AND platform = :platform"
+            params["platform"] = platform.strip()
+        if tone and tone.strip() and tone != "All":
+            query += " AND tone = :tone"
+            params["tone"] = tone.strip()
+        if only_saved:
+            query += " AND is_saved = TRUE"
 
-            if platform and platform.strip() and platform != "All":
-                query += " AND platform = ?"
-                params.append(platform.strip())
+        query += " ORDER BY created_at DESC LIMIT :limit"
+        async with get_db() as db:
+            rows = (await db.execute(text(query), params)).mappings().all()
+        return [cls._history_item(row) for row in rows]
 
-            if tone and tone.strip() and tone != "All":
-                query += " AND tone = ?"
-                params.append(tone.strip())
-
-            if only_saved:
-                query += " AND is_saved = 1"
-
-            query += " ORDER BY created_at DESC LIMIT ?"
-            params.append(limit)
-
-            async with db.execute(query, params) as cursor:
-                rows = await cursor.fetchall()
-                results = []
-                for r in rows:
-                    results.append({
-                        "id": r["id"],
-                        "product_name": r["product_name"],
-                        "product_description": r["product_description"],
-                        "platform": r["platform"],
-                        "tone": r["tone"],
-                        "audience": r["audience"],
-                        "objective": r["objective"],
-                        "prompt_parameters": json.loads(r["prompt_parameters_json"]),
-                        "compiled_prompt": r["compiled_prompt"],
-                        "generated_content": r["generated_content"],
-                        "is_saved": bool(r["is_saved"]),
-                        "created_at": r["created_at"]
-                    })
-                return results
+    @classmethod
+    def _history_item(cls, row: Any) -> Dict[str, Any]:
+        return {
+            "id": row["id"],
+            "product_name": row["product_name"],
+            "product_description": row["product_description"],
+            "platform": row["platform"],
+            "tone": row["tone"],
+            "audience": row["audience"],
+            "objective": row["objective"],
+            "prompt_parameters": json.loads(row["prompt_parameters_json"]),
+            "compiled_prompt": row["compiled_prompt"],
+            "generated_content": row["generated_content"],
+            "is_saved": bool(row["is_saved"]),
+            "created_at": row["created_at"],
+        }
 
     @classmethod
     async def get_by_id(cls, record_id: str) -> Optional[Dict[str, Any]]:
-        async with aiosqlite.connect(settings.DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM history WHERE id = ?", (record_id,)) as cursor:
-                r = await cursor.fetchone()
-                if not r:
-                    return None
-                return {
-                    "id": r["id"],
-                    "product_name": r["product_name"],
-                    "product_description": r["product_description"],
-                    "platform": r["platform"],
-                    "tone": r["tone"],
-                    "audience": r["audience"],
-                    "objective": r["objective"],
-                    "prompt_parameters": json.loads(r["prompt_parameters_json"]),
-                    "compiled_prompt": r["compiled_prompt"],
-                    "generated_content": r["generated_content"],
-                    "is_saved": bool(r["is_saved"]),
-                    "created_at": r["created_at"]
-                }
+        async with get_db() as db:
+            row = (
+                await db.execute(
+                    text("SELECT * FROM history WHERE id = :id"),
+                    {"id": record_id},
+                )
+            ).mappings().first()
+        return cls._history_item(row) if row else None
 
     @classmethod
     async def delete_item(cls, record_id: str) -> bool:
-        async with aiosqlite.connect(settings.DB_PATH) as db:
-            await db.execute("DELETE FROM history WHERE id = ?", (record_id,))
-            await db.commit()
-            return True
+        async with get_db() as db:
+            await db.execute(
+                text("DELETE FROM history WHERE id = :id"),
+                {"id": record_id},
+            )
+        return True
 
     @classmethod
     async def toggle_save(cls, record_id: str) -> bool:
-        async with aiosqlite.connect(settings.DB_PATH) as db:
-            async with db.execute("SELECT is_saved FROM history WHERE id = ?", (record_id,)) as cursor:
-                r = await cursor.fetchone()
-                if not r:
-                    return False
-                current_state = r[0]
-                new_state = 0 if current_state == 1 else 1
-            
-            await db.execute("UPDATE history SET is_saved = ? WHERE id = ?", (new_state, record_id))
-            await db.commit()
-            return bool(new_state)
+        async with get_db() as db:
+            row = (
+                await db.execute(
+                    text("SELECT is_saved FROM history WHERE id = :id"),
+                    {"id": record_id},
+                )
+            ).first()
+            if not row:
+                return False
+            new_state = not bool(row[0])
+            await db.execute(
+                text("UPDATE history SET is_saved = :is_saved WHERE id = :id"),
+                {"is_saved": new_state, "id": record_id},
+            )
+        return new_state
+
 
 history_service = HistoryService()

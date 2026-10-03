@@ -58,7 +58,11 @@ export const SocialAccountPage: React.FC<SocialAccountPageProps> = ({ platform: 
           platform="linkedin"
           name="LinkedIn"
           description="Professional thought leadership & tech commentary publishing"
-          status={linkedinStatus?.connected ? 'connected' : 'disconnected'}
+          status={linkedin.backendUnavailable
+            ? 'unavailable'
+            : linkedinStatus?.connected
+              ? 'connected'
+              : 'disconnected'}
           accountName={linkedinStatus?.display_name}
           profileImage={linkedinStatus?.profile_image}
           lastSynced={lastSynced}

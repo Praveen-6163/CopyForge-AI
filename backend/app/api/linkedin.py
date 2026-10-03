@@ -7,13 +7,14 @@ from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlencode, urlparse
 
-import aiosqlite
 import httpx
 from cryptography.fernet import Fernet
-from fastapi import APIRouter, Cookie, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
+from sqlalchemy import text
 
 from app.core.config import settings
+from app.database.db import get_db
 
 logger = logging.getLogger("copyforge.linkedin")
 router = APIRouter()
@@ -40,11 +41,17 @@ def _token_cipher() -> Fernet:
     return Fernet(base64.urlsafe_b64encode(key))
 
 
-def _frontend_redirect(result: str, reason: str | None = None) -> RedirectResponse:
+def _frontend_redirect(
+    result: str,
+    reason: str | None = None,
+    session_id: str | None = None,
+) -> RedirectResponse:
     params = {"linkedin": result}
     if reason:
         params["reason"] = reason
     destination = f"{settings.FRONTEND_ORIGIN}/social/linkedin?{urlencode(params)}"
+    if session_id:
+        destination = f"{destination}#session={session_id}"
     return RedirectResponse(destination, status_code=302)
 
 
@@ -71,29 +78,44 @@ def _valid_redirect_uri(value: str) -> bool:
 
 async def _store_state(state: str, session_hash: str) -> None:
     now = int(time.time())
-    async with aiosqlite.connect(settings.DB_PATH) as db:
-        await db.execute("DELETE FROM linkedin_oauth_states WHERE expires_at <= ?", (now,))
+    async with get_db() as db:
         await db.execute(
-            "INSERT INTO linkedin_oauth_states (state_hash, session_hash, expires_at) VALUES (?, ?, ?)",
-            (_hash(state), session_hash, now + STATE_TTL_SECONDS),
+            text("DELETE FROM linkedin_oauth_states WHERE expires_at <= :now"),
+            {"now": now},
         )
-        await db.commit()
+        await db.execute(
+            text(
+                """
+                INSERT INTO linkedin_oauth_states (state_hash, session_hash, expires_at)
+                VALUES (:state_hash, :session_hash, :expires_at)
+                """
+            ),
+            {
+                "state_hash": _hash(state),
+                "session_hash": session_hash,
+                "expires_at": now + STATE_TTL_SECONDS,
+            },
+        )
 
 
 async def _consume_state(state: str) -> str | None:
     now = int(time.time())
-    async with aiosqlite.connect(settings.DB_PATH) as db:
-        await db.execute("BEGIN IMMEDIATE")
-        cursor = await db.execute(
-            "SELECT session_hash, expires_at FROM linkedin_oauth_states WHERE state_hash = ?",
-            (_hash(state),),
-        )
-        row = await cursor.fetchone()
-        await db.execute("DELETE FROM linkedin_oauth_states WHERE state_hash = ?", (_hash(state),))
-        await db.commit()
-    if row is None or int(row[1]) <= now:
+    async with get_db() as db:
+        row = (
+            await db.execute(
+                text(
+                    """
+                    DELETE FROM linkedin_oauth_states
+                    WHERE state_hash = :state_hash
+                    RETURNING session_hash, expires_at
+                    """
+                ),
+                {"state_hash": _hash(state)},
+            )
+        ).mappings().first()
+    if row is None or int(row["expires_at"]) <= now:
         return None
-    return str(row[0])
+    return str(row["session_hash"])
 
 
 async def _save_connection(
@@ -112,46 +134,54 @@ async def _save_connection(
     encrypted_token = _token_cipher().encrypt(access_token.encode("utf-8")).decode("ascii")
     connected_at = datetime.now(timezone.utc).isoformat()
 
-    async with aiosqlite.connect(settings.DB_PATH) as db:
+    async with get_db() as db:
         await db.execute(
-            """
-            INSERT INTO linkedin_connections (
-                session_hash, provider, member_id, display_name, profile_image,
-                access_token_ciphertext, token_expires_at, connected_at
-            ) VALUES (?, 'linkedin', ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(session_hash) DO UPDATE SET
-                provider = excluded.provider,
-                member_id = excluded.member_id,
-                display_name = excluded.display_name,
-                profile_image = excluded.profile_image,
-                access_token_ciphertext = excluded.access_token_ciphertext,
-                token_expires_at = excluded.token_expires_at,
-                connected_at = excluded.connected_at
-            """,
-            (
-                session_hash,
-                member_id,
-                display_name,
-                profile_image,
-                encrypted_token,
-                token_expires_at,
-                connected_at,
+            text(
+                """
+                INSERT INTO linkedin_connections (
+                    session_hash, provider, member_id, display_name, profile_image,
+                    access_token_ciphertext, token_expires_at, connected_at
+                ) VALUES (
+                    :session_hash, 'linkedin', :member_id, :display_name, :profile_image,
+                    :access_token_ciphertext, :token_expires_at, :connected_at
+                )
+                ON CONFLICT(session_hash) DO UPDATE SET
+                    provider = excluded.provider,
+                    member_id = excluded.member_id,
+                    display_name = excluded.display_name,
+                    profile_image = excluded.profile_image,
+                    access_token_ciphertext = excluded.access_token_ciphertext,
+                    token_expires_at = excluded.token_expires_at,
+                    connected_at = excluded.connected_at
+                """
             ),
+            {
+                "session_hash": session_hash,
+                "member_id": member_id,
+                "display_name": display_name,
+                "profile_image": profile_image,
+                "access_token_ciphertext": encrypted_token,
+                "token_expires_at": token_expires_at,
+                "connected_at": connected_at,
+            },
         )
-        await db.commit()
 
 
 async def _connection_for_session(session_hash: str) -> tuple[Any, ...] | None:
-    async with aiosqlite.connect(settings.DB_PATH) as db:
-        cursor = await db.execute(
-            """
-            SELECT provider, member_id, display_name, profile_image,
-                   token_expires_at, connected_at
-            FROM linkedin_connections WHERE session_hash = ?
-            """,
-            (session_hash,),
-        )
-        return await cursor.fetchone()
+    async with get_db() as db:
+        row = (
+            await db.execute(
+                text(
+                    """
+                    SELECT provider, member_id, display_name, profile_image,
+                           token_expires_at, connected_at
+                    FROM linkedin_connections WHERE session_hash = :session_hash
+                    """
+                ),
+                {"session_hash": session_hash},
+            )
+        ).first()
+        return tuple(row) if row else None
 
 
 @router.get("/auth/linkedin")
@@ -204,6 +234,8 @@ async def linkedin_oauth_callback(
     if error:
         if error in {"user_cancelled_login", "user_cancelled_authorize"}:
             return _frontend_redirect("cancelled")
+        if error == "redirect_uri_mismatch":
+            return _frontend_redirect("failed", "redirect_uri")
         return _frontend_redirect("failed", "authorization")
     if not code:
         return _frontend_redirect("failed", "code")
@@ -249,7 +281,7 @@ async def linkedin_oauth_callback(
             access_token,
             int(time.time() + expires_in),
         )
-        return _frontend_redirect("connected")
+        return _frontend_redirect("connected", session_id=session_id)
     except httpx.TimeoutException:
         logger.warning("LinkedIn OAuth request timed out.")
         return _frontend_redirect("failed", "network")
@@ -269,30 +301,38 @@ async def linkedin_oauth_callback(
         logger.warning("LinkedIn OAuth provider request failed.")
         return _frontend_redirect("failed", "provider")
     except Exception:
-        logger.exception("Could not save the LinkedIn connection.")
+        logger.error("Could not save the LinkedIn connection.")
         return _frontend_redirect("failed", "storage")
 
 
-@router.get("/api/social/linkedin/status")
-async def linkedin_status(
-    session_id: str | None = Cookie(default=None, alias=SESSION_COOKIE),
-) -> JSONResponse:
+def _request_session_id(request: Request) -> str | None:
+    authorization = request.headers.get("authorization", "")
+    if authorization.lower().startswith("bearer "):
+        session_id = authorization[7:].strip()
+    else:
+        session_id = request.cookies.get(SESSION_COOKIE)
+    if not session_id or len(session_id) > 128:
+        return None
+    return session_id
+
+
+async def _linkedin_status_payload(session_id: str | None) -> dict[str, Any]:
     if not _oauth_enabled():
-        return JSONResponse({"configured": False, "connected": False})
+        return {"configured": False, "connected": False}
     if not session_id:
-        return JSONResponse({"configured": True, "connected": False})
+        return {"configured": True, "connected": False}
 
     row = await _connection_for_session(_hash(session_id))
     if row is None:
-        return JSONResponse({"configured": True, "connected": False})
+        return {"configured": True, "connected": False}
     provider, member_id, display_name, profile_image, token_expires_at, connected_at = row
     if int(token_expires_at) <= int(time.time()):
-        return JSONResponse({
+        return {
             "configured": True,
             "connected": False,
             "error": "token_expired",
-        })
-    return JSONResponse({
+        }
+    return {
         "configured": True,
         "connected": True,
         "provider": provider,
@@ -301,24 +341,34 @@ async def linkedin_status(
         "profile_image": profile_image,
         "token_expires_at": int(token_expires_at),
         "connected_at": connected_at,
-    })
+    }
+
+
+@router.get("/api/social/linkedin/status")
+async def linkedin_status(request: Request) -> JSONResponse:
+    return JSONResponse(await _linkedin_status_payload(_request_session_id(request)))
+
+
+@router.get("/api/social/accounts")
+async def social_accounts(request: Request) -> JSONResponse:
+    linkedin = await _linkedin_status_payload(_request_session_id(request))
+    return JSONResponse({"accounts": [linkedin]})
 
 
 @router.post("/api/social/linkedin/disconnect")
 async def disconnect_linkedin(
     request: Request,
-    session_id: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> JSONResponse:
-    if request.headers.get("origin") != settings.FRONTEND_ORIGIN:
+    if request.headers.get("origin") not in settings.CORS_ALLOWED_ORIGINS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="The request origin is not allowed.",
         )
+    session_id = _request_session_id(request)
     if session_id:
-        async with aiosqlite.connect(settings.DB_PATH) as db:
+        async with get_db() as db:
             await db.execute(
-                "DELETE FROM linkedin_connections WHERE session_hash = ?",
-                (_hash(session_id),),
+                text("DELETE FROM linkedin_connections WHERE session_hash = :session_hash"),
+                {"session_hash": _hash(session_id)},
             )
-            await db.commit()
     return JSONResponse({"disconnected": True})

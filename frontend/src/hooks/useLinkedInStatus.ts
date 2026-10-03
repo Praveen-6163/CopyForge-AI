@@ -3,6 +3,8 @@ import {
   disconnectLinkedIn,
   fetchLinkedInStatus,
   getLinkedInAuthorizationUrl,
+  storeLinkedInSession,
+  clearLinkedInSession,
   LinkedInConnectionStatus,
 } from '../services/linkedinOAuth';
 
@@ -15,6 +17,7 @@ const CALLBACK_MESSAGES: Record<string, string> = {
 const FAILURE_MESSAGES: Record<string, string> = {
   state: 'Connection failed: the LinkedIn sign-in session expired or could not be verified. Please try again.',
   authorization: 'Connection failed: LinkedIn authorization was declined.',
+  redirect_uri: 'Connection failed: the callback URL does not match the LinkedIn Developer Portal configuration.',
   code: 'Connection failed: LinkedIn could not validate the authorization code. Please try again.',
   token: 'Connection failed: the authorization token was rejected. Please reconnect.',
   permissions: 'Connection failed: LinkedIn did not grant the required member posting permission.',
@@ -61,7 +64,7 @@ export const useLinkedInStatus = (): LinkedInStatusState => {
     } catch {
       setStatus(null);
       setBackendUnavailable(true);
-      setError('CopyForge backend is unavailable. Start or configure the backend to use LinkedIn OAuth.');
+      setError('Backend unavailable. CopyForge could not reach the LinkedIn service.');
     } finally {
       setLoading(false);
     }
@@ -71,8 +74,11 @@ export const useLinkedInStatus = (): LinkedInStatusState => {
     const params = new URLSearchParams(window.location.search);
     const callbackResult = params.get('linkedin');
     const callbackReason = params.get('reason');
-    if (callbackResult) {
-      window.history.replaceState(null, '', `${window.location.pathname}${window.location.hash}`);
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const sessionId = fragment.get('session');
+    if (sessionId) storeLinkedInSession(sessionId);
+    if (callbackResult || sessionId) {
+      window.history.replaceState(null, '', window.location.pathname);
     }
     void (async () => {
       await refresh();
@@ -102,6 +108,7 @@ export const useLinkedInStatus = (): LinkedInStatusState => {
     try {
       const result = await disconnectLinkedIn();
       if (!result.disconnected) throw new Error('Disconnect was not confirmed.');
+      clearLinkedInSession();
       setStatus((current) => current ? { ...current, connected: false } : current);
       setNotice('LinkedIn has been disconnected.');
     } catch {

@@ -12,14 +12,28 @@ export interface LinkedInConnectionStatus {
 
 const configuredApiBase = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/+$/, '');
 const backendOrigin = configuredApiBase?.replace(/\/api$/, '') || '';
+const SESSION_KEY = 'copyforge_linkedin_session';
+
+export const storeLinkedInSession = (sessionId: string): void => {
+  if (sessionId) window.sessionStorage.setItem(SESSION_KEY, sessionId);
+};
+
+const getLinkedInSession = (): string | null =>
+  window.sessionStorage.getItem(SESSION_KEY);
+
+export const clearLinkedInSession = (): void => {
+  window.sessionStorage.removeItem(SESSION_KEY);
+};
 
 const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
+  const sessionId = getLinkedInSession();
   const response = await fetch(`${backendOrigin}${path}`, {
     ...init,
     credentials: 'include',
     cache: 'no-store',
     headers: {
       Accept: 'application/json',
+      ...(sessionId ? { Authorization: `Bearer ${sessionId}` } : {}),
       ...init?.headers,
     },
   });

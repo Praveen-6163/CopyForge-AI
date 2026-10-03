@@ -1,9 +1,11 @@
 import logging
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.database.db import init_db
+from app.database.db import database_url
 from app.api.router import router
 from app.api.linkedin import router as linkedin_router
 
@@ -17,6 +19,7 @@ async def lifespan(app: FastAPI):
     # Startup actions
     await init_db()
     logging.info(f"Started {settings.PROJECT_NAME} backend v{settings.VERSION}")
+    logging.info("Database configured: %s", "PostgreSQL" if "postgresql" in database_url() else "SQLite")
     linkedin_issues = settings.LINKEDIN_CONFIGURATION_ISSUES
     if linkedin_issues:
         logging.warning(
@@ -25,6 +28,8 @@ async def lifespan(app: FastAPI):
         )
     else:
         logging.info("LinkedIn OAuth is configured for callback %s", settings.LINKEDIN_REDIRECT_URI)
+    if os.getenv("RENDER") and not settings.DATABASE_URL:
+        logging.warning("DATABASE_URL is unset; Render's local SQLite storage is ephemeral.")
     if settings.is_demo_mode:
         logging.info("--> OPENAI_API_KEY not found or default. Running in DEMO MODE.")
     else:
@@ -42,7 +47,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_ORIGIN],
+    allow_origins=settings.CORS_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,6 +55,12 @@ app.add_middleware(
 
 app.include_router(router)
 app.include_router(linkedin_router)
+
+
+@app.get("/health")
+async def production_health():
+    return {"status": "healthy"}
+
 
 @app.get("/")
 async def root():

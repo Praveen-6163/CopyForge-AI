@@ -474,7 +474,7 @@ export interface SocialAccountCardProps {
   platform: 'linkedin' | 'instagram';
   name: string;
   description: string;
-  status: 'connected' | 'disconnected';
+  status: 'connected' | 'disconnected' | 'unavailable';
   accountName?: string;
   profileImage?: string | null;
   lastSynced?: string;
@@ -493,6 +493,7 @@ export const SocialAccountCard: React.FC<SocialAccountCardProps> = ({
   connectLabel, unavailableMessage, onConnect, onDisconnect, connecting, disconnecting, connectAvailable = true
 }) => {
   const isConnected = status === 'connected';
+  const isUnavailable = status === 'unavailable';
   const isLinkedIn = platform === 'linkedin';
 
   return (
@@ -511,8 +512,8 @@ export const SocialAccountCard: React.FC<SocialAccountCardProps> = ({
             <p className="text-xs text-slate-400">{description}</p>
           </div>
         </div>
-        <Badge variant={isConnected ? 'success' : 'default'} dot>
-          {isConnected ? (connectedLabel || 'Connected') : 'Not Connected'}
+        <Badge variant={isConnected ? 'success' : isUnavailable ? 'error' : 'default'} dot>
+          {isConnected ? (connectedLabel || 'Connected') : isUnavailable ? 'Backend unavailable' : 'Not Connected'}
         </Badge>
       </div>
 
@@ -531,7 +532,9 @@ export const SocialAccountCard: React.FC<SocialAccountCardProps> = ({
           <p className="text-xs text-slate-400">
             {connecting
               ? 'Redirecting to LinkedIn…'
-              : connectAvailable
+              : isUnavailable
+                ? 'Backend unavailable. Check the backend URL and try again.'
+                : connectAvailable
                 ? 'Official OAuth 2.0 connection'
                 : unavailableMessage || `${name} connection is not configured.`}
           </p>

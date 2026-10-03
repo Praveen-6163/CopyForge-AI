@@ -15,7 +15,7 @@ CopyForge AI is a content-generation prototype for marketing teams, developers, 
 - 🛡️ **Output Validation & Formatting Service**: Strips conversational preambles, validates structural requirements (e.g. Email subject lines, Twitter character gauges), and provides diagnostic pass/warning feedback.
 - ⚡ **Asynchronous Execution & Retry Logic**: Async FastAPI backend featuring exponential backoff retries with randomized jitter to handle OpenAI rate limits (HTTP 429) and transient errors gracefully.
 - 🔌 **Seamless Demo Mode**: Fully operational out-of-the-box without an API key using a high-quality local generation engine for easy testing and evaluation.
-- 💾 **SQLite History & Bookmarks**: Save, search, filter by platform/tone, delete, and reopen past generations seamlessly.
+- 💾 **Persistent History & Bookmarks**: Save, search, filter by platform/tone, delete, and reopen past generations seamlessly (SQLite locally; PostgreSQL in production).
 - 📑 **Preset Form formulas & Templates**: 7 built-in templates (Product Launch, Startup Announcement, Thought Leadership, etc.) for one-click form completion.
 - 🔍 **Prompt Inspector**: View exact compiled system and user prompts sent to the backend LLM engine.
 - 📤 **Multi-Format Export**: One-click Copy, TXT export, Markdown export, and Web Share API integration.
@@ -26,9 +26,18 @@ The Netlify site runs as a static frontend. Without `VITE_API_BASE_URL`, copy ge
 
 ## LinkedIn OAuth setup
 
-LinkedIn OAuth is implemented in the existing FastAPI backend. Its callback route is `/auth/linkedin/callback`; `backend/run.py` reads `PORT`, which defaults to `8000`. The exact local callback URL is therefore `http://localhost:8000/auth/linkedin/callback`. Register the exact URL configured by `LINKEDIN_REDIRECT_URI` in the LinkedIn Developer Portal and enable the OpenID Connect profile product plus the `w_member_social` member posting permission. Copy `.env.example` to an untracked `.env` file and fill in `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_REDIRECT_URI`, and a random `SECRET_KEY` of at least 32 characters. Set `FRONTEND_ORIGIN` to the exact frontend origin (for example, `http://localhost:3000` during local development). If changing `PORT`, include the same port in the registered callback URL and use that port to run the backend. At startup the backend logs missing or invalid LinkedIn variable names only, never their values.
+LinkedIn OAuth runs in the existing FastAPI backend. Local callback: `http://localhost:8000/auth/linkedin/callback`. Copy `.env.example` to a local, untracked `.env`; keep all secrets on the backend. Local Vite development can proxy requests to port 8000. OAuth requests the OpenID Connect `openid profile` scopes and the `w_member_social` permission.
 
-The callback URL must resolve to the running backend and exactly match the URL registered in LinkedIn; do not use the local example callback for a deployed backend. Deploy the FastAPI backend over HTTPS, configure the same environment variables there, set the frontend build variable `VITE_API_BASE_URL` to the backend origin, and set `FRONTEND_ORIGIN` to the deployed frontend origin. Keep the client secret and `.env` on the server only. LinkedIn access tokens are encrypted before storage in the backend SQLite database; the status API never returns tokens. OAuth connection does not itself publish content.
+### Deploy the API to Render
+
+1. Create a Render Web Service from this repository using the checked-in `render.yaml`, or configure the service root to `backend`, build command `pip install -r requirements.txt`, and start command `gunicorn app.main:app --worker-class uvicorn_worker.UvicornWorker --bind 0.0.0.0:$PORT --workers 1 --timeout 120`.
+2. Create a managed PostgreSQL database and set the backend's `DATABASE_URL` to its **internal** connection URL. The backend uses local SQLite when `DATABASE_URL` is unset; Render's local filesystem is ephemeral, so PostgreSQL is required for persistent production data.
+3. In Render, set `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_REDIRECT_URI`, `SECRET_KEY`, `DATABASE_URL`, and `FRONTEND_URL`. Generate a random `SECRET_KEY` with at least 32 characters. Set `FRONTEND_URL` to `https://copyforge-aiauto.netlify.app`. Keep the client secret only in Render.
+4. After Render creates the service, use its HTTPS hostname to set `LINKEDIN_REDIRECT_URI` to `https://<your-render-service>.onrender.com/auth/linkedin/callback`. Register that exact URL in the LinkedIn Developer Portal, then redeploy.
+5. Set the Netlify site's build environment variable `VITE_API_BASE_URL` to `https://<your-render-service>.onrender.com` and trigger a new frontend deploy. This is a public API URL, not a secret. Never create a `VITE_LINKEDIN_CLIENT_SECRET` or any other frontend secret variable.
+6. Check `https://<your-render-service>.onrender.com/health`; it should return `{"status":"healthy"}`. Then open the Netlify site, go to Social Accounts, and use **Connect LinkedIn**. LinkedIn should return to Netlify and the status is fetched from the Render API.
+
+The `render.yaml` blueprint sets a health check, Gunicorn/Uvicorn startup, secure frontend origin, and prompts for OAuth and database settings. PostgreSQL is supported through SQLAlchemy with `asyncpg`; local development retains SQLite. OAuth tokens are encrypted in backend storage and never included in API responses. The browser receives only a separate opaque CopyForge session identifier needed to look up the connection across the Netlify/Render origins. OAuth connection does not itself publish content.
 
 ---
 
@@ -57,7 +66,7 @@ User Input Brief (Product, Platform, Tone, Audience, Objective, Params)
       (Prefix Stripping, Structure Verification, Gauges)
                           │
                           ▼
-          6. SQLite Storage & Interactive Editor Output
+          6. SQLite/PostgreSQL Storage & Interactive Editor Output
 ```
 
 ---
@@ -156,7 +165,7 @@ npm run dev
 | `POST` | `/api/generate` | Main content generation endpoint |
 | `POST` | `/api/improve` | Refines copy (make shorter, make longer, change tone, change platform) |
 | `POST` | `/api/regenerate` | Re-executes generation with tweaked parameters |
-| `GET` | `/api/history` | Fetches SQLite generation history with search/filter queries |
+| `GET` | `/api/history` | Fetches generation history with search/filter queries |
 | `GET` | `/api/history/{id}` | Fetches single history record by ID |
 | `DELETE` | `/api/history/{id}` | Deletes history record by ID |
 | `POST` | `/api/history/{id}/toggle-save` | Toggles bookmark status |
@@ -194,6 +203,6 @@ Connect the repository to Netlify and use the repository root as the base direct
 - [x] Platform-specific output constraints
 - [x] Post-generation output validation & prefix stripping
 - [x] Async execution, retry logic & rate limit jitter
-- [x] SQLite database history storage
+- [x] SQLite local / PostgreSQL production database storage
 - [x] Demo mode fallback when API key is unconfigured
 - [x] Professional SaaS "Creative AI Studio" UI/UX
