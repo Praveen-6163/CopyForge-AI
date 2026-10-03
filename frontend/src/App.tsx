@@ -81,19 +81,25 @@ export const App: React.FC = () => {
     fetchHealth().then(setHealth).catch(console.error);
   }, []);
 
-  // ─── Generation Handlers (preserved exactly) ────────────────────────────────
-  const handleGenerate = async () => {
+  // ─── Generation Handlers ──────────────────────────────────────────────────
+  const handleGenerate = async (overrideForm?: GenerateRequest) => {
+    const activeForm = overrideForm || formData;
+    if (!activeForm.product_name && !activeForm.product_description) {
+      alert('Please provide a topic or description before generating.');
+      return;
+    }
     setIsLoading(true);
     setPipelineStage('prompt_compiling');
     try {
       setPipelineStage('ai_generating');
-      const result = await generateCopy(formData);
+      const result = await generateCopy(activeForm);
       setPipelineStage('validating');
       setGenerationOutput(result);
       setPipelineStage('ready');
     } catch (e: any) {
-      console.error(e);
-      alert(`Generation Error: ${e.response?.data?.detail || e.message}`);
+      console.error('Generation error:', e);
+      const errorMsg = e.response?.data?.detail || e.message || 'Generation failed';
+      alert(`Generation Error: ${errorMsg}`);
       setPipelineStage('idle');
     } finally {
       setIsLoading(false);
