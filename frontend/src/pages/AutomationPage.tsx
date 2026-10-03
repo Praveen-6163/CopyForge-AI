@@ -16,12 +16,24 @@ import {
   Calendar
 } from 'lucide-react';
 import { Button, Badge, WorkflowStep } from '../components/ui';
+import { getWorkspacePreferences, saveWorkspacePreferences } from '../services/workspacePreferences';
 
 export const AutomationPage: React.FC = () => {
-  const [engineActive, setEngineActive] = useState(true);
+  const [preferences, setPreferences] = useState(getWorkspacePreferences);
   const [mode, setMode] = useState<'draft_only' | 'approval_required' | 'auto_publish'>('approval_required');
-  const [scheduleTime, setScheduleTime] = useState('06:00 AM');
-  const [timezone, setTimezone] = useState('Asia/Kolkata (IST)');
+  const [saveError, setSaveError] = useState('');
+
+  const updateAutomationPreference = (updates: Partial<typeof preferences>) => {
+    const next = { ...preferences, ...updates };
+    setPreferences(next);
+    try {
+      saveWorkspacePreferences(next);
+      setSaveError('');
+    } catch (error) {
+      console.error('Could not save automation preferences.', error);
+      setSaveError('Could not save this preference. Check browser storage permissions.');
+    }
+  };
 
   const workflowSteps = [
     { stepNumber: 1, title: 'DISCOVER', description: 'Semantic clustering of AI trends and tech velocity spikes', status: 'completed' as const, icon: Radio },
@@ -37,6 +49,7 @@ export const AutomationPage: React.FC = () => {
   return (
     <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-10 animate-fade-in">
       {/* ── Hero Control Header ────────────────────────────────────── */}
+      {saveError && <p role="alert" className="text-sm text-rose-300">{saveError}</p>}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/[0.07]">
         <div className="space-y-2">
           <span className="text-[11px] font-mono font-bold tracking-widest text-indigo-400 uppercase">
@@ -46,18 +59,18 @@ export const AutomationPage: React.FC = () => {
             Automation Engine
           </h1>
           <p className="text-sm text-slate-400 max-w-xl">
-            "Let CopyForge discover, create and prepare your daily content."
+            Local workflow preview only. No background jobs run and no posts are scheduled or published.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <Button
-            variant={engineActive ? 'primary' : 'outline'}
+            variant={preferences.automationEnabled ? 'primary' : 'outline'}
             size="md"
-            icon={engineActive ? Pause : Play}
-            onClick={() => setEngineActive(!engineActive)}
+            icon={preferences.automationEnabled ? Pause : Play}
+            onClick={() => updateAutomationPreference({ automationEnabled: !preferences.automationEnabled })}
           >
-            {engineActive ? 'Pause Engine' : 'Activate Engine'}
+            {preferences.automationEnabled ? 'Turn preference off' : 'Turn preference on'}
           </Button>
         </div>
       </div>
@@ -65,10 +78,10 @@ export const AutomationPage: React.FC = () => {
       {/* ── Execution Status Overview ──────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="editorial-card rounded-2xl p-5 border border-white/10 space-y-1">
-          <p className="text-[10px] font-mono text-slate-500 uppercase">Engine Status</p>
-          <p className="text-xl font-bold text-emerald-400 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-            {engineActive ? 'Active & Ready' : 'Paused'}
+          <p className="text-[10px] font-mono text-slate-500 uppercase">Preview Status</p>
+          <p className="text-xl font-bold text-slate-200 flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${preferences.automationEnabled ? 'bg-amber-400' : 'bg-slate-500'}`} />
+          {preferences.automationEnabled ? 'Preference enabled' : 'Preference off'}
           </p>
         </div>
 
@@ -76,18 +89,20 @@ export const AutomationPage: React.FC = () => {
           <p className="text-[10px] font-mono text-slate-500 uppercase">Execution Schedule</p>
           <p className="text-xl font-bold text-white flex items-center gap-1.5">
             <Clock className="w-4 h-4 text-indigo-400" />
-            Every day 06:00 AM
+            Preference only
           </p>
         </div>
 
         <div className="editorial-card rounded-2xl p-5 border border-white/10 space-y-1">
           <p className="text-[10px] font-mono text-slate-500 uppercase">Next Scheduled Run</p>
-          <p className="text-xl font-bold text-indigo-300">Tomorrow 06:00 AM</p>
+          <p className="text-xl font-bold text-indigo-300">
+            {new Date(`2000-01-01T${preferences.postingTime}:00`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+          </p>
         </div>
 
         <div className="editorial-card rounded-2xl p-5 border border-white/10 space-y-1">
-          <p className="text-[10px] font-mono text-slate-500 uppercase">Last Execution</p>
-          <p className="text-xl font-bold text-slate-300">Today at 06:00 AM (2 drafts created)</p>
+          <p className="text-[10px] font-mono text-slate-500 uppercase">Execution History</p>
+          <p className="text-xl font-bold text-slate-300">No jobs executed</p>
         </div>
       </div>
 
@@ -98,7 +113,7 @@ export const AutomationPage: React.FC = () => {
             <Zap className="w-4 h-4 text-indigo-400" />
             Pipeline Architecture Flow
           </h3>
-          <span className="text-xs font-mono text-slate-500">8 Autonomous Nodes</span>
+          <span className="text-xs font-mono text-slate-500">8 illustrative stages</span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
@@ -120,6 +135,16 @@ export const AutomationPage: React.FC = () => {
         <h3 className="text-base font-bold text-white uppercase tracking-wider pb-3 border-b border-white/[0.06]">
           Autonomous Safety & Publishing Mode
         </h3>
+        <label className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-300">
+          <span className="flex items-center gap-2"><Clock className="h-4 w-4 text-indigo-400" /> Preferred posting time</span>
+          <input
+            type="time"
+            aria-label="Preferred posting time"
+            value={preferences.postingTime}
+            onChange={(event) => updateAutomationPreference({ postingTime: event.target.value })}
+            className="rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-white"
+          />
+        </label>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div
@@ -166,7 +191,7 @@ export const AutomationPage: React.FC = () => {
             <span className="font-mono text-xs font-bold text-indigo-400 block mb-1">MODE 03</span>
             <h4 className="text-sm font-bold text-white mb-1">Autonomous Auto-Publish</h4>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Fully autonomous publishing to connected accounts if AI quality score exceeds 95/100.
+              Display-only mode selector. Auto-publishing requires social OAuth and a backend worker, neither of which is configured.
             </p>
           </div>
         </div>

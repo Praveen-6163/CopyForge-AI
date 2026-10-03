@@ -123,6 +123,8 @@ export const TrendRadarPage: React.FC = () => {
   ];
 
   const handleRefresh = () => {
+    setSearchQuery('');
+    setSelectedCategory('all');
     setIsRefreshing(true);
     setTimeout(() => setIsRefreshing(false), 800);
   };
@@ -145,8 +147,9 @@ export const TrendRadarPage: React.FC = () => {
           <h1 className="text-3xl md:text-5xl font-extrabold text-white tracking-tight">
             Trend Radar
           </h1>
+          <Badge variant="warning">Bundled sample topics</Badge>
           <p className="text-sm text-slate-400 max-w-xl">
-            Discover what the AI world is talking about right now. Real-time topic clustering, velocity gauges, and 1-click studio drafting.
+            Explore example AI topics and draft them in the studio. Live trend sources are not configured in this demo.
           </p>
         </div>
 
@@ -158,7 +161,7 @@ export const TrendRadarPage: React.FC = () => {
             loading={isRefreshing}
             onClick={handleRefresh}
           >
-            Refresh Radar
+            Reset Sample Feed
           </Button>
           <Button
             variant="primary"
@@ -171,30 +174,30 @@ export const TrendRadarPage: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Live AI Radar Hero Visual Section ──────────────────────── */}
+      {/* ── Sample Radar Hero Visual Section ───────────────────────── */}
       <div className="editorial-card rounded-3xl p-6 md:p-8 relative overflow-hidden border border-white/10 shadow-2xl">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
           <div className="lg:col-span-7 space-y-4 z-10">
             <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-ping" />
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400" />
               <span className="text-xs font-mono font-semibold text-indigo-300 uppercase tracking-widest">
-                LIVE AI RADAR SCANNING
+                SAMPLE TOPIC DATASET
               </span>
             </div>
             <h2 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
               High-Velocity Topic: Reasoning & Test-Time Compute
             </h2>
             <p className="text-xs md:text-sm text-slate-300 leading-relaxed max-w-xl">
-              Discussions around open-weight reasoning models and test-time compute scaling have surged <span className="text-emerald-400 font-semibold">+142% in the last 24 hours</span> across technical LinkedIn and X developer communities.
+              Illustrative example topic and trend metrics. No live sources are connected to this demo.
             </p>
 
             <div className="pt-2 flex items-center gap-4">
               <div className="p-3 rounded-xl bg-slate-900/80 border border-white/[0.08]">
-                <p className="text-[10px] font-mono text-slate-400 uppercase">Trend Score</p>
+                <p className="text-[10px] font-mono text-slate-400 uppercase">Sample Trend Score</p>
                 <p className="text-lg font-bold text-emerald-400">99 / 100</p>
               </div>
               <div className="p-3 rounded-xl bg-slate-900/80 border border-white/[0.08]">
-                <p className="text-[10px] font-mono text-slate-400 uppercase">Virality Rank</p>
+                <p className="text-[10px] font-mono text-slate-400 uppercase">Sample Rank</p>
                 <p className="text-lg font-bold text-indigo-400">#1 Top Tech</p>
               </div>
               <div className="p-3 rounded-xl bg-slate-900/80 border border-white/[0.08]">
@@ -213,7 +216,7 @@ export const TrendRadarPage: React.FC = () => {
               />
               <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent pointer-events-none" />
               <div className="absolute bottom-3 left-4 right-4 text-center">
-                <span className="text-xs font-mono text-indigo-300 font-semibold">Semantic Cluster Matrix ✦ Active</span>
+                <span className="text-xs font-mono text-indigo-300 font-semibold">Example topic artwork</span>
               </div>
             </div>
           </div>

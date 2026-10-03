@@ -16,7 +16,9 @@ import {
   BarChart3,
   Settings,
   Sparkles,
-  ShieldAlert
+  ShieldAlert,
+  History,
+  Bookmark
 } from 'lucide-react';
 import { HealthStatus } from '../types/generation';
 
@@ -24,6 +26,9 @@ interface SidebarProps {
   health?: HealthStatus | null;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  onOpenHistory: (savedOnly: boolean) => void;
+  mobileOpen: boolean;
+  onClose: () => void;
 }
 
 interface NavItem {
@@ -44,7 +49,7 @@ const NAV_SECTIONS: NavSection[] = [
     title: 'HOME',
     items: [
       { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-      { to: '/trend-radar', label: 'Trend Radar', icon: Radio, badge: 'Live', badgeVariant: 'purple' },
+      { to: '/trend-radar', label: 'Trend Radar', icon: Radio, badge: 'Demo', badgeVariant: 'amber' },
       { to: '/studio', label: 'Content Studio', icon: PenTool },
       { to: '/image-studio', label: 'Image Studio', icon: ImageIcon, badge: 'New', badgeVariant: 'purple' },
     ],
@@ -80,14 +85,23 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-export const NewSidebar: React.FC<SidebarProps> = ({ health }) => {
+export const NewSidebar: React.FC<SidebarProps> = ({ health, onOpenHistory, mobileOpen, onClose }) => {
   const location = useLocation();
 
   return (
-    <aside className="w-64 bg-[#0d1117] border-r border-white/[0.07] flex flex-col flex-shrink-0 h-screen sticky top-0 z-30 select-none">
+    <>
+    {mobileOpen && (
+      <button
+        type="button"
+        aria-label="Close navigation"
+        onClick={onClose}
+        className="fixed inset-0 z-40 bg-black/60 md:hidden"
+      />
+    )}
+    <aside className={`fixed inset-y-0 left-0 z-50 flex h-screen w-64 flex-shrink-0 flex-col select-none border-r border-white/[0.07] bg-[#0d1117] transition-transform duration-200 md:sticky md:top-0 md:z-30 md:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}`}>
       {/* ── Brand Logo ────────────────────────────────────────────── */}
       <div className="p-6 pb-5 border-b border-white/[0.06] flex items-center justify-between">
-        <NavLink to="/" className="flex items-center gap-3 group">
+        <NavLink to="/" onClick={onClose} className="flex items-center gap-3 group">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-indigo-600/30 group-hover:scale-105 transition-transform">
             <Sparkles className="w-4 h-4" />
           </div>
@@ -120,6 +134,7 @@ export const NewSidebar: React.FC<SidebarProps> = ({ health }) => {
                   <NavLink
                     key={item.to}
                     to={item.to}
+                    onClick={onClose}
                     className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all group ${
                       isActive
                         ? 'bg-indigo-600/15 text-indigo-300 font-semibold border border-indigo-500/20 shadow-sm shadow-indigo-500/5'
@@ -154,15 +169,40 @@ export const NewSidebar: React.FC<SidebarProps> = ({ health }) => {
       <div className="p-4 border-t border-white/[0.06] bg-slate-950/40">
         <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${health?.engine_mode === 'backend' ? 'bg-emerald-500' : 'bg-amber-400'}`}>
             </span>
             <div>
-              <p className="text-xs font-medium text-white">AI Engine Active</p>
-              <p className="text-[10px] text-slate-500">{health?.openai_model || 'gpt-4o-mini'}</p>
+              <p className="text-xs font-medium text-white">
+                {!health ? 'Checking Engine' : health.engine_mode === 'openai_direct'
+                  ? 'OpenAI key saved'
+                  : health.engine_mode === 'backend'
+                    ? 'Backend API connected'
+                    : health.engine_mode === 'backend_demo'
+                      ? 'Backend demo engine'
+                      : 'Local demo engine'}
+              </p>
+              <p className="text-[10px] text-slate-500">{health?.openai_model || 'Checking status'}</p>
             </div>
           </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => { onOpenHistory(false); onClose(); }}
+            className="flex items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] px-2 py-2 text-[11px] text-slate-400 hover:text-white hover:bg-white/[0.04]"
+          >
+            <History className="w-3.5 h-3.5" />
+            History
+          </button>
+          <button
+            type="button"
+            onClick={() => { onOpenHistory(true); onClose(); }}
+            className="flex items-center justify-center gap-1.5 rounded-lg border border-white/[0.08] px-2 py-2 text-[11px] text-slate-400 hover:text-white hover:bg-white/[0.04]"
+          >
+            <Bookmark className="w-3.5 h-3.5" />
+            Saved
+          </button>
         </div>
 
         <div className="mt-3 flex items-center justify-between px-1 text-[11px] text-slate-500">
@@ -171,5 +211,6 @@ export const NewSidebar: React.FC<SidebarProps> = ({ health }) => {
         </div>
       </div>
     </aside>
+    </>
   );
 };

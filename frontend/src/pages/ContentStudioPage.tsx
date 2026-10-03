@@ -310,7 +310,7 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
           </div>
         </div>
 
-        {/* ── RIGHT: Live Content Preview & Post Simulator ──────────── */}
+        {/* ── RIGHT: Interactive Content Preview ───────────────────── */}
         <div className="lg:col-span-7 space-y-6">
           <div className="editorial-card rounded-2xl p-6 border border-white/10 space-y-5">
             <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">

@@ -6,6 +6,30 @@ import {
 const LOCAL_STORAGE_HISTORY_KEY = 'copyforge_history_v1';
 const LOCAL_STORAGE_SAVED_KEY = 'copyforge_saved_v1';
 
+export const saveEngineGenerationToHistory = (generation: GenerationResponse): void => {
+  try {
+    const existingStr = localStorage.getItem(LOCAL_STORAGE_HISTORY_KEY);
+    const historyList: HistoryItem[] = existingStr ? JSON.parse(existingStr) : [];
+    historyList.unshift({
+      id: generation.id,
+      product_name: generation.product_name,
+      product_description: generation.product_description,
+      platform: generation.platform,
+      tone: generation.tone,
+      audience: generation.audience,
+      objective: generation.objective,
+      generated_content: generation.generated_content,
+      prompt_parameters: generation.prompt_parameters,
+      is_saved: generation.is_saved,
+      created_at: generation.created_at,
+      is_demo_mode: generation.is_demo_mode,
+    });
+    localStorage.setItem(LOCAL_STORAGE_HISTORY_KEY, JSON.stringify(historyList.slice(0, 100)));
+  } catch (error) {
+    console.warn('Could not save generation to local history.', error);
+  }
+};
+
 export const getPresetTemplates = (): TemplateItem[] => [
   {
     id: 'product-launch',
@@ -100,7 +124,7 @@ export const getPresetTemplates = (): TemplateItem[] => [
   }
 ];
 
-export const generateEngineContent = (req: GenerateRequest): GenerationResponse => {
+export const generateEngineContent = (req: GenerateRequest, saveToHistory = true): GenerationResponse => {
   const { product_name, product_description, platform, tone, audience, objective, additional_instructions, parameters } = req;
   const descSnippet = product_description.length > 140 ? product_description.slice(0, 140) + '...' : product_description;
   const cleanName = product_name.replace(/[^a-zA-Z0-9]/g, '');
@@ -279,38 +303,17 @@ User Input Brief:
     generated_content: rawText,
     formatted_content: formattedContent,
     platform_validation: validationResult,
-    is_demo_mode: false,
+    is_demo_mode: true,
     is_saved: false,
     created_at: createdAt
   };
 
-  // Save to LocalStorage History
-  try {
-    const existingStr = localStorage.getItem(LOCAL_STORAGE_HISTORY_KEY);
-    const historyList: HistoryItem[] = existingStr ? JSON.parse(existingStr) : [];
-    const historyItem: HistoryItem = {
-      id: genId,
-      product_name,
-      product_description,
-      platform,
-      tone,
-      audience: audience.toString(),
-      objective,
-      generated_content: rawText,
-      prompt_parameters: parameters,
-      is_saved: false,
-      created_at: createdAt
-    };
-    historyList.unshift(historyItem);
-    localStorage.setItem(LOCAL_STORAGE_HISTORY_KEY, JSON.stringify(historyList.slice(0, 100)));
-  } catch (e) {
-    console.warn('LocalStorage history save exception:', e);
-  }
+  if (saveToHistory) saveEngineGenerationToHistory(responseObj);
 
   return responseObj;
 };
 
-export const improveEngineContent = (req: ImproveRequest): GenerationResponse => {
+export const improveEngineContent = (req: ImproveRequest, saveToHistory = true): GenerationResponse => {
   const { current_content, action, product_name, platform, tone } = req;
   let improved = current_content;
 
@@ -338,12 +341,13 @@ export const improveEngineContent = (req: ImproveRequest): GenerationResponse =>
     parameters: req.parameters
   };
 
-  const res = generateEngineContent(genReq);
+  const res = generateEngineContent(genReq, false);
   res.generated_content = improved;
   res.formatted_content.raw_text = improved;
   res.formatted_content.word_count = improved.split(/\s+/).filter(Boolean).length;
   res.formatted_content.char_count = improved.length;
-  res.is_demo_mode = false;
+  res.is_demo_mode = true;
+  if (saveToHistory) saveEngineGenerationToHistory(res);
   return res;
 };
 

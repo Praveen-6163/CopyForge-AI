@@ -80,9 +80,9 @@ export const ApprovalQueuePage: React.FC = () => {
 
   const handleAction = (type: 'approve' | 'reject' | 'schedule') => {
     if (!currentItem) return;
-    const msg = type === 'approve' ? `Approved "${currentItem.topic}" for distribution!` :
-                type === 'schedule' ? `Scheduled "${currentItem.topic}" for publication!` :
-                `Rejected "${currentItem.topic}".`;
+    const msg = type === 'approve' ? `Demo preview only: "${currentItem.topic}" marked approved; no post was sent.` :
+                type === 'schedule' ? `Demo preview only: "${currentItem.topic}" was not scheduled or published.` :
+                `Demo preview only: "${currentItem.topic}" was not sent anywhere.`;
     setNotification(msg);
     setTimeout(() => setNotification(null), 3000);
   };
@@ -97,10 +97,10 @@ export const ApprovalQueuePage: React.FC = () => {
           </span>
           <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
             Approval Queue
-            <Badge variant="warning">{items.length} Pending Review</Badge>
+            <Badge variant="warning">{items.length} Sample Items</Badge>
           </h1>
           <p className="text-xs md:text-sm text-slate-400">
-            Inspect autonomous drafts, review AI quality diagnostics, and approve for multi-channel distribution.
+            Review bundled example drafts. Approval and scheduling buttons only demonstrate the workflow; they do not publish or schedule posts.
           </p>
         </div>
 
@@ -159,7 +159,7 @@ export const ApprovalQueuePage: React.FC = () => {
                     icon={Calendar}
                     onClick={() => handleAction('schedule')}
                   >
-                    Schedule
+                    Preview Schedule
                   </Button>
                   <Button
                     variant="primary"
@@ -167,7 +167,7 @@ export const ApprovalQueuePage: React.FC = () => {
                     icon={CheckCircle2}
                     onClick={() => handleAction('approve')}
                   >
-                    Approve Post
+                    Preview Approval
                   </Button>
                 </div>
               </div>

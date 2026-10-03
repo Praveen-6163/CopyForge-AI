@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { Settings, User, Cpu, Linkedin, Instagram, Zap, Bell, Shield, Key, Eye, EyeOff, Save, Trash2, CheckCircle2 } from 'lucide-react';
+import { Settings, User, Cpu, Linkedin, Zap, Shield, Key, Eye, EyeOff, Save, Trash2, AlertCircle } from 'lucide-react';
 import {
-  SectionHeader, GlassCard, Button, Badge, Toggle, Tabs,
+  SectionHeader, Button, Badge, Tabs,
   useToast, ToastContainer, PageWrapper
 } from '../components/ui';
 import { getStoredApiKey, getStoredModel } from '../services/api';
+import { getWorkspacePreferences, saveWorkspacePreferences } from '../services/workspacePreferences';
+import { AudienceType, ObjectiveType, PlatformType, ToneType } from '../types/generation';
 
 const SETTINGS_TABS = [
   { id: 'general',    label: 'General',         icon: Settings },
@@ -20,18 +22,39 @@ export const SettingsPage: React.FC = () => {
   const [apiKey, setApiKey] = useState(getStoredApiKey());
   const [model, setModel] = useState(getStoredModel());
   const [showKey, setShowKey] = useState(false);
+  const [preferences, setPreferences] = useState(getWorkspacePreferences);
   const { toasts, show, dismiss } = useToast();
 
   const handleSaveApiKey = () => {
-    localStorage.setItem('copyforge_openai_api_key', apiKey.trim());
-    localStorage.setItem('copyforge_openai_model', model);
-    show('success', 'API settings saved successfully.');
+    try {
+      localStorage.setItem('copyforge_openai_api_key', apiKey.trim());
+      localStorage.setItem('copyforge_openai_model', model);
+      show('success', 'AI settings saved in this browser.');
+    } catch (error) {
+      console.error('Could not save AI settings.', error);
+      show('error', 'Could not save AI settings. Check browser storage permissions.');
+    }
   };
 
   const handleClearKey = () => {
-    localStorage.removeItem('copyforge_openai_api_key');
-    setApiKey('');
-    show('info', 'API key removed.');
+    try {
+      localStorage.removeItem('copyforge_openai_api_key');
+      setApiKey('');
+      show('info', 'API key removed. CopyForge will use the local demo engine.');
+    } catch (error) {
+      console.error('Could not clear the saved API key.', error);
+      show('error', 'Could not clear the API key. Check browser storage permissions.');
+    }
+  };
+
+  const handleSavePreferences = () => {
+    try {
+      saveWorkspacePreferences(preferences);
+      show('success', 'Content defaults saved. Reset the studio brief to apply them.');
+    } catch (error) {
+      console.error('Could not save workspace preferences.', error);
+      show('error', 'Could not save preferences. Check browser storage permissions.');
+    }
   };
 
   return (
@@ -63,7 +86,7 @@ export const SettingsPage: React.FC = () => {
               {[
                 { label: 'Platform Name', value: 'CopyForge AI', readOnly: true },
                 { label: 'Version', value: '2.4.0 Editorial Edition', readOnly: true },
-                { label: 'Default Language', value: 'English (US)', readOnly: false },
+                { label: 'Workspace Storage', value: 'This browser (local storage)', readOnly: true },
               ].map(({ label, value, readOnly }) => (
                 <div key={label} className="space-y-1.5">
                   <label className="text-xs font-semibold text-slate-300 block">{label}</label>
@@ -75,15 +98,74 @@ export const SettingsPage: React.FC = () => {
                   />
                 </div>
               ))}
-              <div className="pt-2">
-                <Toggle
-                  enabled={true}
-                  onChange={() => {}}
-                  label="Editorial Dark Mode"
-                  description="High-contrast charcoal & deep midnight palette enabled"
-                />
+              <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4">
+                <p className="text-xs font-semibold text-slate-200">Editorial dark appearance</p>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  The demo currently uses a fixed dark theme; appearance switching is not available.
+                </p>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'content' && (
+        <div className="max-w-2xl">
+          <div className="editorial-card rounded-2xl p-6 border border-white/10 space-y-5">
+            <SectionHeader title="Content Defaults" icon={User} subtitle="Saved in this browser and used when you reset the Content Studio brief." />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <label className="space-y-1.5 text-xs font-semibold text-slate-300">
+                Default platform
+                <select
+                  value={preferences.defaultPlatform}
+                  onChange={(event) => setPreferences({ ...preferences, defaultPlatform: event.target.value as PlatformType })}
+                  className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white"
+                >
+                  {['LinkedIn', 'Instagram', 'Email', 'X/Twitter', 'Facebook', 'Website'].map((platform) => (
+                    <option key={platform} value={platform}>{platform}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1.5 text-xs font-semibold text-slate-300">
+                Default tone
+                <select
+                  value={preferences.defaultTone}
+                  onChange={(event) => setPreferences({ ...preferences, defaultTone: event.target.value as ToneType })}
+                  className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white"
+                >
+                  {['Professional', 'Friendly', 'Witty', 'Persuasive', 'Premium', 'Casual', 'Inspirational', 'Technical'].map((tone) => (
+                    <option key={tone} value={tone}>{tone}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1.5 text-xs font-semibold text-slate-300">
+                Default audience
+                <select
+                  value={preferences.defaultAudience}
+                  onChange={(event) => setPreferences({ ...preferences, defaultAudience: event.target.value as AudienceType })}
+                  className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white"
+                >
+                  {['General', 'Students', 'Developers', 'Professionals', 'Business Owners', 'Custom'].map((audience) => (
+                    <option key={audience} value={audience}>{audience}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="space-y-1.5 text-xs font-semibold text-slate-300">
+                Default objective
+                <select
+                  value={preferences.defaultObjective}
+                  onChange={(event) => setPreferences({ ...preferences, defaultObjective: event.target.value as ObjectiveType })}
+                  className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white"
+                >
+                  {['Product launch', 'Product promotion', 'Awareness', 'Engagement', 'Announcement', 'Educational'].map((objective) => (
+                    <option key={objective} value={objective}>{objective}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <Button variant="primary" size="md" icon={Save} onClick={handleSavePreferences}>
+              Save Content Defaults
+            </Button>
           </div>
         </div>
       )}
@@ -96,8 +178,8 @@ export const SettingsPage: React.FC = () => {
             <div className="space-y-5">
               <div>
                 <label className="text-xs font-semibold text-slate-200 flex items-center justify-between mb-1.5">
-                  <span className="flex items-center gap-1.5"><Key className="w-4 h-4 text-indigo-400" /> OpenAI API Key (Client Direct)</span>
-                  {apiKey && <Badge variant="success" size="sm">Configured</Badge>}
+                  <span className="flex items-center gap-1.5"><Key className="w-4 h-4 text-indigo-400" /> Optional OpenAI API Key</span>
+                  {apiKey && <Badge variant="success" size="sm">Saved in this browser</Badge>}
                 </label>
                 <div className="relative">
                   <input
@@ -116,7 +198,7 @@ export const SettingsPage: React.FC = () => {
                   </button>
                 </div>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Optional. Stored strictly in your browser's <code>localStorage</code> and never sent to third-party tracking servers.
+                  Optional. Stored in this browser's local storage and sent directly to OpenAI when used. Leave blank to use the built-in local demo engine.
                 </p>
               </div>
 
@@ -149,6 +231,24 @@ export const SettingsPage: React.FC = () => {
         </div>
       )}
 
+      {(tab === 'social' || tab === 'automation') && (
+        <div className="max-w-2xl editorial-card rounded-2xl p-6 border border-amber-500/20 bg-amber-950/10">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-400 mt-0.5" />
+            <div className="space-y-2">
+              <h2 className="text-sm font-bold text-white">
+                {tab === 'social' ? 'Social OAuth is not configured' : 'Background automation is not configured'}
+              </h2>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                {tab === 'social'
+                  ? 'Account connection screens in this demo do not sign in to or publish through LinkedIn or Instagram.'
+                  : 'The automation controls are a local preview. No background jobs, scheduled runs, or posts are created.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Security */}
       {tab === 'security' && (
         <div className="max-w-2xl space-y-5">
@@ -156,7 +256,7 @@ export const SettingsPage: React.FC = () => {
             <SectionHeader title="Privacy & Security" icon={Shield} />
             <div className="space-y-3 text-xs text-slate-300">
               <p>
-                CopyForge AI enforces strict zero-client exposure for backend keys and user privacy compliance.
+                Demo generations, bookmarks, and workspace preferences are stored in this browser. An optional OpenAI key is also stored here and sent directly to OpenAI when you request AI generation.
               </p>
               <div className="pt-2">
                 <a

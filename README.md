@@ -3,7 +3,7 @@
 > **DecodeLabs Generative AI Project 2: Automated Copywriting & Tone Transformer**  
 > *"Turn product ideas into platform-ready content."*
 
-CopyForge AI is a production-quality generative AI SaaS workspace built for marketing teams, developers, and founders. It transforms raw product briefs into platform-optimized marketing content tailored for **LinkedIn**, **Instagram**, **Email**, **X/Twitter**, **Facebook**, and **Website Landing Pages**.
+CopyForge AI is a content-generation prototype for marketing teams, developers, and founders. It transforms raw product briefs into platform-oriented drafts for **LinkedIn**, **Instagram**, **Email**, **X/Twitter**, **Facebook**, and **Website Landing Pages**.
 
 ---
 
@@ -19,6 +19,10 @@ CopyForge AI is a production-quality generative AI SaaS workspace built for mark
 - 📑 **Preset Form formulas & Templates**: 7 built-in templates (Product Launch, Startup Announcement, Thought Leadership, etc.) for one-click form completion.
 - 🔍 **Prompt Inspector**: View exact compiled system and user prompts sent to the backend LLM engine.
 - 📤 **Multi-Format Export**: One-click Copy, TXT export, Markdown export, and Web Share API integration.
+
+## Demo Deployment Scope
+
+The Netlify site runs as a static frontend. Without `VITE_API_BASE_URL`, copy generation, history, bookmarks, templates, and workspace preferences use the browser's local demo engine and local storage. Trend cards, analytics, calendar entries, approval items, and artwork are sample data. Social OAuth, live trend feeds, image generation, background scheduling, and external publishing are not configured and do not run.
 
 ---
 
@@ -167,6 +171,10 @@ Run frontend production build verification:
 cd frontend
 npm run build
 ```
+
+### Deploy to Netlify
+
+Connect the repository to Netlify and use the repository root as the base directory. The root `netlify.toml` installs the frontend from its lockfile, builds it, publishes `frontend/dist`, and configures SPA route fallback. Without `VITE_API_BASE_URL`, the site uses its browser-based demo engine. Set that variable to the deployed FastAPI origin (the app appends `/api`) only when a backend is available. Trigger a new production deploy after changing the deployment configuration.
 
 ---
 

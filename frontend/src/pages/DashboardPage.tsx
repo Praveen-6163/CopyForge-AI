@@ -1,284 +1,365 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Sparkles,
   ArrowRight,
-  TrendingUp,
+  CalendarClock,
+  Check,
+  Clock3,
+  Instagram,
+  Linkedin,
+  LockKeyhole,
+  PenLine,
   Radio,
-  PenTool,
-  Calendar,
-  CheckSquare,
+  RefreshCw,
+  Send,
+  Settings2,
+  Sparkles,
   Zap,
-  Activity,
-  Compass,
-  Layers,
-  Send
 } from 'lucide-react';
-import { Button, TrendCard, Badge, StatCard } from '../components/ui';
+import { Button, Badge } from '../components/ui';
+import { GenerationResponse, HealthStatus } from '../types/generation';
+import { scheduleGeneration } from '../services/scheduledPosts';
+import { getWorkspacePreferences, saveWorkspacePreferences, WorkspacePreferences } from '../services/workspacePreferences';
 
-export const DashboardPage: React.FC = () => {
-  const navigate = useNavigate();
+interface DashboardPageProps {
+  health: HealthStatus | null;
+  generation: GenerationResponse | null;
+  isGenerating: boolean;
+  dashboardContent: { linkedin: GenerationResponse | null; instagram: GenerationResponse | null };
+  onGenerate: () => Promise<void>;
+  onEditContent: (generation: GenerationResponse) => void;
+  onOpenHistory: (savedOnly: boolean) => void;
+}
 
-  const editorialTrends = [
-    {
-      index: '01',
-      topic: 'AI Agents',
-      headline: 'Autonomous multi-agent orchestration frameworks entering enterprise production',
-      insight: 'LangGraph, AutoGen and CrewAI architectures are replacing monolithic LLM chains for complex software workflows.',
-      source: 'TechCrunch / ArXiv',
-      time: '12m ago',
-      trendScore: 98,
-      image: '/assets/ai_agent_sculpture.jpg',
-    },
-    {
-      index: '02',
-      topic: 'Generative AI',
-      headline: 'Reasoning models redefine chain-of-thought distillation and agentic tools',
-      insight: 'DeepSeek-R1 and OpenAI o3 benchmarks trigger massive community interest in open test-time compute scaling.',
-      source: 'VentureBeat AI',
-      time: '45m ago',
-      trendScore: 94,
-      image: '/assets/trend_radar_art.jpg',
-    },
-    {
-      index: '03',
-      topic: 'AI Coding',
-      headline: 'Spec-driven development paired with agentic IDEs changes engineering workflows',
-      insight: 'Full codebase context agents allow single engineers to design, build, and deploy full-stack platforms 10x faster.',
-      source: 'GitHub Trends',
-      time: '1h ago',
-      trendScore: 91,
-    },
-    {
-      index: '04',
-      topic: 'Multimodal AI',
-      headline: 'Real-time video and audio token stream interfaces reach mobile devices',
-      insight: 'Native multimodal models enable conversational screen inspection and live voice pair-programming.',
-      source: 'HuggingFace',
-      time: '2h ago',
-      trendScore: 89,
-    },
-  ];
+const SAMPLE_TOPIC = {
+  title: 'AI agents are changing how teams work',
+  description: 'A ready-to-edit idea for your next post. Create content to turn it into a platform-specific draft.',
+  image: '/assets/ai_agent_sculpture.jpg',
+};
+
+const formatTime = (time: string) => {
+  const [hours, minutes] = time.split(':').map(Number);
+  return new Date(2000, 0, 1, hours, minutes).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+};
+
+const PreviewCard: React.FC<{
+  platform: 'LinkedIn' | 'Instagram';
+  generation: GenerationResponse | null;
+  onEdit: () => void;
+}> = ({ platform, generation, onEdit }) => {
+  const isInstagram = platform === 'Instagram';
+  const content = generation?.generated_content || SAMPLE_TOPIC.description;
 
   return (
-    <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-10 animate-fade-in">
-      {/* ── Top Cinematic Header ───────────────────────────────────── */}
-      <div className="space-y-3">
-        <span className="text-[11px] font-mono font-bold tracking-widest text-indigo-400 uppercase">
-          COPYFORGE AI
+    <article className="cf-preview-card">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+          {isInstagram
+            ? <Instagram className="h-4 w-4 text-pink-300" />
+            : <Linkedin className="h-4 w-4 text-sky-300" />}
+          {platform} preview
+        </div>
+        <span className={`cf-status-pill ${generation ? 'cf-status-ready' : 'cf-status-sample'}`}>
+          {generation ? <Check className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
+          {generation ? 'Ready' : 'Sample'}
         </span>
-        <h1 className="text-3xl md:text-5xl font-extrabold text-white tracking-tight max-w-3xl leading-[1.15]">
-          Turn AI trends into content that gets noticed.
-        </h1>
-        <p className="text-sm md:text-base text-slate-400 max-w-2xl leading-relaxed">
-          Discover emerging AI topics, create platform-ready content, generate visuals and automate your social publishing workflow.
-        </p>
       </div>
+      <p className="mt-3 line-clamp-5 min-h-[6.5rem] whitespace-pre-wrap text-xs leading-relaxed text-slate-300">
+        {content}
+      </p>
+      <div className="mt-4 flex items-center justify-between border-t border-white/[0.07] pt-3">
+        <span className="text-[11px] text-slate-500">
+          {generation ? `${generation.formatted_content.char_count} characters` : 'Generate to personalize'}
+        </span>
+        <button
+          type="button"
+          onClick={onEdit}
+          disabled={!generation}
+          className="inline-flex items-center gap-1 text-xs font-semibold text-sky-300 transition hover:text-white disabled:cursor-not-allowed disabled:text-slate-600"
+        >
+          <PenLine className="h-3.5 w-3.5" /> Edit
+        </button>
+      </div>
+    </article>
+  );
+};
 
-      {/* ── Featured "Today's AI Pulse" Hero Section (Reference Design) ── */}
-      <div className="editorial-card rounded-3xl p-6 md:p-10 relative overflow-hidden border border-white/10 shadow-2xl">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-          {/* Left Column */}
-          <div className="lg:col-span-5 space-y-5 z-10">
-            <div className="space-y-1.5">
-              <span className="font-mono text-xs font-bold text-indigo-400 tracking-wider">/01</span>
-              <h2 className="text-2xl md:text-4xl font-extrabold text-white tracking-tight">
-                Today's AI Pulse
-              </h2>
-              <p className="text-xs md:text-sm text-slate-400 leading-relaxed pt-1">
-                The most relevant AI and technology conversations discovered for you.
-              </p>
-            </div>
+export const DashboardPage: React.FC<DashboardPageProps> = ({
+  health,
+  generation,
+  isGenerating,
+  dashboardContent,
+  onGenerate,
+  onEditContent,
+  onOpenHistory,
+}) => {
+  const navigate = useNavigate();
+  const [preferences, setPreferences] = useState<WorkspacePreferences>(getWorkspacePreferences);
+  const [notice, setNotice] = useState('');
+  const [scheduledNotice, setScheduledNotice] = useState('');
+  const linkedinGeneration = generation?.platform === 'LinkedIn' ? generation : dashboardContent.linkedin;
+  const instagramGeneration = generation?.platform === 'Instagram' ? generation : dashboardContent.instagram;
 
-            <div className="p-4 rounded-2xl bg-slate-900/80 border border-white/[0.08] space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-indigo-300">Active Collection</span>
-                <span className="text-[10px] font-mono text-emerald-400 font-semibold">Live Feed</span>
-              </div>
-              <p className="text-xs text-slate-300 font-medium">
-                Autonomous Agents & Reasoning Architectures
-              </p>
-              <p className="text-[11px] text-slate-500">
-                14 trending topics detected across LinkedIn & X tech channels.
-              </p>
-            </div>
+  useEffect(() => {
+    if (!notice) return;
+    const timeout = window.setTimeout(() => setNotice(''), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [notice]);
 
-            <div className="flex items-center gap-3 pt-2">
-              <Button
-                variant="primary"
-                size="lg"
-                iconRight={ArrowRight}
-                onClick={() => navigate('/studio')}
-              >
-                Create with AI
-              </Button>
-              <Button
-                variant="outline"
-                size="lg"
-                icon={Radio}
-                onClick={() => navigate('/trend-radar')}
-              >
-                Open Radar
-              </Button>
-            </div>
+  const updatePreferences = (next: WorkspacePreferences) => {
+    setPreferences(next);
+    try {
+      saveWorkspacePreferences(next);
+    } catch (error) {
+      console.error('Could not save automation settings.', error);
+      setNotice('Could not save this setting. Check browser storage permissions.');
+    }
+  };
+
+  const editGeneration = (item: GenerationResponse | null) => {
+    if (!item) return;
+    onEditContent(item);
+  };
+
+  const schedulePosts = () => {
+    const posts = [linkedinGeneration, instagramGeneration].filter(
+      (item): item is GenerationResponse => Boolean(item),
+    );
+    if (posts.length === 0) {
+      setNotice('Create content first, then schedule it for your calendar.');
+      return;
+    }
+    try {
+      posts.forEach((item) => scheduleGeneration(item, preferences.postingTime));
+      setScheduledNotice(`Saved ${posts.length} draft${posts.length === 1 ? '' : 's'} to your local calendar for the next ${formatTime(preferences.postingTime)} slot.`);
+    } catch (error) {
+      console.error('Could not schedule draft.', error);
+      setNotice(error instanceof Error ? error.message : 'Could not schedule this draft.');
+    }
+  };
+
+  const requestPublish = () => {
+    setNotice('Publishing is unavailable until a social account and server-side publishing integration are connected.');
+  };
+
+  return (
+    <main className="cf-dashboard mx-auto w-full max-w-[1500px] space-y-5 p-4 sm:p-6 xl:p-8">
+      <section className="cf-hero relative isolate overflow-hidden">
+        <div className="cf-hero-glow" aria-hidden="true" />
+        <div className="relative z-10 max-w-2xl">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <span className="cf-eyebrow"><Sparkles className="h-3.5 w-3.5" /> Your AI content workspace</span>
+            <Badge variant={health?.engine_mode === 'backend' ? 'success' : 'warning'}>
+              {health?.engine_mode === 'backend' ? 'Backend connected' : 'Demo mode'}
+            </Badge>
           </div>
-
-          {/* Right Column / Large Cinematic 3D Hero Artwork */}
-          <div className="lg:col-span-7 relative">
-            <div className="rounded-2xl overflow-hidden border border-white/15 shadow-2xl relative group max-h-[380px] bg-slate-950">
-              <img
-                src="/assets/hero_ai_pulse.jpg"
-                alt="Today's AI Pulse Artwork"
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0d1117]/90 via-transparent to-transparent pointer-events-none" />
-
-              {/* Floating Editorial Pill (Like Reference Design) */}
-              <div className="absolute top-4 right-4 backdrop-blur-md bg-slate-950/70 border border-white/15 px-3 py-1.5 rounded-full flex items-center gap-2 text-xs text-white shadow-xl">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                <span className="font-semibold text-[11px]">Explore AI Creations</span>
-              </div>
-
-              {/* Bottom Overlay Title (Like Reference Design) */}
-              <div className="absolute bottom-5 left-6 right-6 flex items-end justify-between">
-                <div>
-                  <h3 className="text-lg md:text-xl font-bold text-white tracking-tight">
-                    Shape the Future with CopyForge
-                  </h3>
-                  <p className="text-xs text-slate-300 max-w-md mt-0.5 line-clamp-1">
-                    Turn complex research into high-converting LinkedIn and Instagram posts.
-                  </p>
-                </div>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => navigate('/image-studio')}
-                >
-                  Visual Studio
-                </Button>
-              </div>
-            </div>
+          <p className="mb-2 text-sm text-sky-100/75">Good morning 👋</p>
+          <h1 className="max-w-xl text-3xl font-bold leading-tight text-white sm:text-4xl xl:text-[2.7rem]">
+            From trending idea to <span className="text-gradient-cyan">ready-to-post content.</span>
+          </h1>
+          <p className="mt-3 max-w-lg text-sm leading-relaxed text-slate-300">
+            Pick a trend, create platform-ready drafts, and organize your posting schedule—all from one place.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Button variant="primary" size="lg" icon={Sparkles} onClick={() => void onGenerate()} loading={isGenerating}>
+              {isGenerating ? 'Creating content…' : 'Create content'}
+            </Button>
+            <Button variant="outline" size="lg" icon={Radio} onClick={() => navigate('/trend-radar')}>
+              Explore trends
+            </Button>
+          </div>
+          <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-slate-400">
+            <span className="flex items-center gap-1.5"><span className="cf-step-dot">1</span> Connect accounts</span>
+            <ArrowRight className="h-3 w-3 text-slate-600" />
+            <span className="flex items-center gap-1.5"><span className="cf-step-dot">2</span> Create a draft</span>
+            <ArrowRight className="h-3 w-3 text-slate-600" />
+            <span className="flex items-center gap-1.5"><span className="cf-step-dot">3</span> Schedule or publish</span>
           </div>
         </div>
-      </div>
+        <div className="cf-hero-art" aria-hidden="true">
+          <img src="/assets/ai_agent_sculpture.jpg" alt="" />
+          <div className="cf-hero-art-label"><Sparkles className="h-3.5 w-3.5" /> Your content co-pilot</div>
+        </div>
+      </section>
 
-      {/* ── Key Metrics Overview ───────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          index="01"
-          label="Active Trends"
-          value="28"
-          icon={Radio}
-          trend={{ value: 34, label: 'vs last week' }}
-        />
-        <StatCard
-          index="02"
-          label="Drafts in Queue"
-          value="6"
-          icon={PenTool}
-          trend={{ value: 12, label: 'this week' }}
-        />
-        <StatCard
-          index="03"
-          label="Scheduled"
-          value="4"
-          icon={Calendar}
-          subtext="Next: Tomorrow 9:00 AM"
-        />
-        <StatCard
-          index="04"
-          label="Avg Engagement"
-          value="4.8%"
-          icon={Activity}
-          trend={{ value: 18, label: 'organic ROI' }}
-        />
-      </div>
+      {notice && (
+        <div role="status" className="cf-notice">
+          <LockKeyhole className="h-4 w-4 shrink-0 text-amber-300" /> {notice}
+        </div>
+      )}
 
-      {/* ── Editorial Trend Cards (01, 02, 03, 04) ──────────────────── */}
-      <div className="space-y-5">
-        <div className="flex items-center justify-between">
+      <section aria-label="Accounts and automation" className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
+        <div className="cf-panel">
+          <div className="cf-section-heading">
+            <div>
+              <p className="cf-eyebrow">Get connected</p>
+              <h2>Your social accounts</h2>
+            </div>
+            <button type="button" className="cf-text-link" onClick={() => navigate('/social/linkedin')}>
+              Manage <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button type="button" className="cf-account-card" onClick={() => navigate('/social/linkedin')}>
+              <span className="cf-account-icon cf-linkedin-icon"><Linkedin className="h-5 w-5" /></span>
+              <span className="min-w-0 flex-1 text-left">
+                <span className="block text-sm font-semibold text-white">LinkedIn</span>
+                <span className="mt-1 block text-[11px] text-amber-300">Not connected</span>
+              </span>
+              <ArrowRight className="h-4 w-4 text-slate-500" />
+            </button>
+            <button type="button" className="cf-account-card" onClick={() => navigate('/social/instagram')}>
+              <span className="cf-account-icon cf-instagram-icon"><Instagram className="h-5 w-5" /></span>
+              <span className="min-w-0 flex-1 text-left">
+                <span className="block text-sm font-semibold text-white">Instagram</span>
+                <span className="mt-1 block text-[11px] text-amber-300">Not connected</span>
+              </span>
+              <ArrowRight className="h-4 w-4 text-slate-500" />
+            </button>
+          </div>
+          <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+            Account setup opens the integration page. Social sign-in and publishing require provider credentials.
+          </p>
+        </div>
+
+        <div className="cf-panel">
+          <div className="cf-section-heading">
+            <div>
+              <p className="cf-eyebrow">Your daily workflow</p>
+              <h2>Daily automation</h2>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={preferences.automationEnabled}
+              aria-label="Toggle daily automation"
+              onClick={() => updatePreferences({ ...preferences, automationEnabled: !preferences.automationEnabled })}
+              className={`cf-switch ${preferences.automationEnabled ? 'is-on' : ''}`}
+            >
+              <span />
+            </button>
+          </div>
+          <div className="cf-automation-summary">
+            <div className="cf-automation-row">
+              <span><Clock3 className="h-4 w-4" /> Posting time</span>
+              <label className="cf-time-input">
+                <input
+                  type="time"
+                  aria-label="Daily posting time"
+                  value={preferences.postingTime}
+                  onChange={(event) => updatePreferences({ ...preferences, postingTime: event.target.value })}
+                />
+              </label>
+            </div>
+            <div className="cf-automation-row">
+              <span><Radio className="h-4 w-4" /> Content source</span>
+              <span className="text-right text-slate-200">AI trend ideas</span>
+            </div>
+            <div className="cf-automation-row">
+              <span><Zap className="h-4 w-4" /> Current mode</span>
+              <span className="text-right text-slate-200">
+                {preferences.automationEnabled ? 'Preference enabled' : 'Off'}
+              </span>
+            </div>
+          </div>
+          <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
+            This saves your daily preference. Automatic background posting is not active until a scheduler and social integrations are configured.
+          </p>
+        </div>
+      </section>
+
+      <section className="cf-panel">
+        <div className="cf-section-heading flex-wrap">
           <div>
-            <span className="font-mono text-xs font-bold text-indigo-400 tracking-wider">TRENDING DISCOVERIES</span>
-            <h3 className="text-xl font-bold text-white tracking-tight">Top AI Conversations Today</h3>
+            <p className="cf-eyebrow">A starting point for today</p>
+            <h2>Today’s AI content</h2>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            iconRight={ArrowRight}
-            onClick={() => navigate('/trend-radar')}
-          >
-            Explore all 28 trends
-          </Button>
+          <button type="button" className="cf-text-link" onClick={() => navigate('/trend-radar')}>
+            Browse trend radar <ArrowRight className="h-3.5 w-3.5" />
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-          {editorialTrends.map((trend) => (
-            <TrendCard
-              key={trend.index}
-              index={trend.index}
-              topic={trend.topic}
-              headline={trend.headline}
-              insight={trend.insight}
-              source={trend.source}
-              time={trend.time}
-              trendScore={trend.trendScore}
-              image={trend.image}
-              onSelect={() => navigate('/studio')}
+        <div className="grid gap-4 xl:grid-cols-[minmax(220px,0.85fr)_minmax(0,1.3fr)_minmax(210px,0.8fr)]">
+          <article className="cf-topic-card">
+            <div className="cf-topic-image">
+              <img src={SAMPLE_TOPIC.image} alt="Sample AI robot visual" />
+              <span>Today’s topic · sample</span>
+            </div>
+            <div className="mt-3 flex items-start justify-between gap-3">
+              <h3>{linkedinGeneration?.product_name || instagramGeneration?.product_name || SAMPLE_TOPIC.title}</h3>
+              <span className="cf-score-pill"><Sparkles className="h-3 w-3" /> Idea</span>
+            </div>
+            <p>{linkedinGeneration?.product_description || instagramGeneration?.product_description || SAMPLE_TOPIC.description}</p>
+            <button type="button" className="cf-text-link mt-3" onClick={() => navigate('/trend-radar')}>
+              Find a trend <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </article>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <PreviewCard
+              platform="LinkedIn"
+              generation={linkedinGeneration}
+              onEdit={() => editGeneration(linkedinGeneration)}
             />
-          ))}
-        </div>
-      </div>
-
-      {/* ── Quick Workspaces Grid ──────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 pt-4">
-        <div 
-          onClick={() => navigate('/studio')}
-          className="glass-card rounded-2xl p-6 cursor-pointer border border-white/[0.07] hover:border-indigo-500/40 group"
-        >
-          <div className="w-10 h-10 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-            <PenTool className="w-5 h-5" />
+            <PreviewCard
+              platform="Instagram"
+              generation={instagramGeneration}
+              onEdit={() => editGeneration(instagramGeneration)}
+            />
           </div>
-          <h4 className="text-base font-bold text-white mb-1 flex items-center justify-between">
-            Content Studio
-            <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-indigo-400 group-hover:translate-x-1 transition-all" />
-          </h4>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Write structured, platform-ready copy with dynamic prompt compilation and parameter control.
-          </p>
-        </div>
 
-        <div 
-          onClick={() => navigate('/image-studio')}
-          className="glass-card rounded-2xl p-6 cursor-pointer border border-white/[0.07] hover:border-indigo-500/40 group"
-        >
-          <div className="w-10 h-10 rounded-xl bg-violet-600/20 text-violet-400 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-            <Sparkles className="w-5 h-5" />
-          </div>
-          <h4 className="text-base font-bold text-white mb-1 flex items-center justify-between">
-            Image Studio
-            <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-violet-400 group-hover:translate-x-1 transition-all" />
-          </h4>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Generate 3D renders, infographics, and editorial artwork matching your written narrative.
-          </p>
+          <article className="cf-image-card">
+            <div className="cf-section-heading">
+              <div>
+                <p className="cf-eyebrow">Visual preview</p>
+                <h2>Image preview</h2>
+              </div>
+              <button
+                type="button"
+                aria-label="Open image studio"
+                onClick={() => navigate('/image-studio')}
+                className="cf-icon-button"
+              >
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
+            <img src="/assets/hero_ai_pulse.jpg" alt="Sample CopyForge AI artwork" />
+            <p>Sample artwork · open Image Studio to explore the visual workspace</p>
+          </article>
         </div>
 
-        <div 
-          onClick={() => navigate('/automation')}
-          className="glass-card rounded-2xl p-6 cursor-pointer border border-white/[0.07] hover:border-indigo-500/40 group"
-        >
-          <div className="w-10 h-10 rounded-xl bg-emerald-600/20 text-emerald-400 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-            <Zap className="w-5 h-5" />
-          </div>
-          <h4 className="text-base font-bold text-white mb-1 flex items-center justify-between">
-            Autonomous Pipeline
-            <ArrowRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 group-hover:translate-x-1 transition-all" />
-          </h4>
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Configure automated topic discovery, multi-stage approval routing, and scheduled publishing.
-          </p>
+        <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-white/[0.07] pt-4">
+          <Button variant="primary" size="md" icon={Send} onClick={requestPublish}>
+            Post now
+          </Button>
+          <Button variant="secondary" size="md" icon={CalendarClock} onClick={schedulePosts}>
+            Schedule for {formatTime(preferences.postingTime)}
+          </Button>
+          <Button variant="outline" size="md" icon={PenLine} onClick={() => navigate('/studio')}>
+            Edit content
+          </Button>
+          <Button variant="ghost" size="md" icon={RefreshCw} onClick={() => void onGenerate()} loading={isGenerating}>
+            Regenerate
+          </Button>
+          <button type="button" className="cf-text-link ml-auto" onClick={() => onOpenHistory(false)}>
+            <Settings2 className="h-3.5 w-3.5" /> Open history
+          </button>
         </div>
-      </div>
-    </div>
+        {scheduledNotice && (
+          <div role="status" className="cf-scheduled-notice mt-4">
+            <Check className="h-4 w-4 shrink-0" />
+            <span>{scheduledNotice} This is a local calendar reminder, not an automatic social post.</span>
+            <button type="button" onClick={() => navigate('/calendar')}>Open calendar</button>
+          </div>
+        )}
+      </section>
+
+      <footer className="flex flex-wrap items-center justify-between gap-2 px-1 text-[11px] text-slate-500">
+        <span>Connect → Discover → Create → Review → Publish</span>
+        <button type="button" onClick={() => navigate('/settings')} className="cf-text-link">
+          <Settings2 className="h-3.5 w-3.5" /> Workspace settings
+        </button>
+      </footer>
+    </main>
   );
 };

@@ -1,41 +1,15 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
-  Linkedin,
-  Instagram,
   ShieldCheck,
-  Key,
-  Lock,
-  ExternalLink,
-  CheckCircle2,
-  AlertCircle,
-  RefreshCw,
-  Trash2
+  AlertCircle
 } from 'lucide-react';
-import { Button, Badge, SocialAccountCard } from '../components/ui';
+import { SocialAccountCard } from '../components/ui';
 
 interface SocialAccountPageProps {
   platform?: 'linkedin' | 'instagram';
 }
 
 export const SocialAccountPage: React.FC<SocialAccountPageProps> = ({ platform: initialPlatform }) => {
-  const [linkedinConnected, setLinkedinConnected] = useState(false);
-  const [instagramConnected, setInstagramConnected] = useState(false);
-  const [isConnecting, setIsConnecting] = useState<string | null>(null);
-
-  const handleConnect = (plat: 'linkedin' | 'instagram') => {
-    setIsConnecting(plat);
-    setTimeout(() => {
-      if (plat === 'linkedin') setLinkedinConnected(true);
-      if (plat === 'instagram') setInstagramConnected(true);
-      setIsConnecting(null);
-    }, 1000);
-  };
-
-  const handleDisconnect = (plat: 'linkedin' | 'instagram') => {
-    if (plat === 'linkedin') setLinkedinConnected(false);
-    if (plat === 'instagram') setInstagramConnected(false);
-  };
-
   return (
     <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-8 animate-fade-in">
       {/* ── Header ─────────────────────────────────────────────────── */}
@@ -47,7 +21,7 @@ export const SocialAccountPage: React.FC<SocialAccountPageProps> = ({ platform: 
           Social Accounts Hub
         </h1>
         <p className="text-xs md:text-sm text-slate-400 max-w-2xl">
-          Connect official OAuth accounts for automated distribution. We enforce a zero client exposure security policy where access tokens are never stored insecurely.
+          Social account cards are previews only. This demo has no OAuth credentials and cannot access or publish to your accounts.
         </p>
       </div>
 
@@ -58,12 +32,8 @@ export const SocialAccountPage: React.FC<SocialAccountPageProps> = ({ platform: 
           platform="linkedin"
           name="LinkedIn"
           description="Professional thought leadership & tech commentary publishing"
-          status={linkedinConnected ? 'connected' : 'disconnected'}
-          accountName={linkedinConnected ? 'Praveen Medida (Founder)' : undefined}
-          lastSynced={linkedinConnected ? 'Just now' : undefined}
-          onConnect={() => handleConnect('linkedin')}
-          onDisconnect={() => handleDisconnect('linkedin')}
-          connecting={isConnecting === 'linkedin'}
+          status="disconnected"
+          connectAvailable={false}
         />
 
         {/* Instagram */}
@@ -71,12 +41,8 @@ export const SocialAccountPage: React.FC<SocialAccountPageProps> = ({ platform: 
           platform="instagram"
           name="Instagram"
           description="Visual carousel assets & bio-link traffic generation"
-          status={instagramConnected ? 'connected' : 'disconnected'}
-          accountName={instagramConnected ? '@copyforge.ai' : undefined}
-          lastSynced={instagramConnected ? '2 hours ago' : undefined}
-          onConnect={() => handleConnect('instagram')}
-          onDisconnect={() => handleDisconnect('instagram')}
-          connecting={isConnecting === 'instagram'}
+          status="disconnected"
+          connectAvailable={false}
         />
       </div>
 
@@ -84,37 +50,37 @@ export const SocialAccountPage: React.FC<SocialAccountPageProps> = ({ platform: 
       <div className="editorial-card rounded-2xl p-6 border border-white/10 space-y-4">
         <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          Zero Client Token Exposure Architecture
+          Demo Integration Status
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
           <div className="p-4 rounded-xl bg-slate-900/60 border border-white/[0.06] space-y-1.5">
             <div className="flex items-center gap-2 text-indigo-400 font-bold">
-              <Key className="w-3.5 h-3.5" />
-              <span>Restricted Scopes</span>
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span>OAuth unavailable</span>
             </div>
             <p className="text-slate-400 leading-relaxed">
-              We only request <code>w_member_social</code> and <code>instagram_content_publish</code> permissions needed for drafting and scheduling.
+              LinkedIn and Instagram sign-in has not been configured. Connect buttons are disabled and do not create fake accounts.
             </p>
           </div>
 
           <div className="p-4 rounded-xl bg-slate-900/60 border border-white/[0.06] space-y-1.5">
             <div className="flex items-center gap-2 text-indigo-400 font-bold">
-              <Lock className="w-3.5 h-3.5" />
-              <span>Encrypted Storage</span>
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Local demo only</span>
             </div>
             <p className="text-slate-400 leading-relaxed">
-              OAuth tokens are encrypted at rest with AES-256 and never transmitted to the browser client.
+              This browser demo stores generated drafts locally. It does not request or store social access tokens.
             </p>
           </div>
 
           <div className="p-4 rounded-xl bg-slate-900/60 border border-white/[0.06] space-y-1.5">
             <div className="flex items-center gap-2 text-indigo-400 font-bold">
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Instant Revocation</span>
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span>Publishing unavailable</span>
             </div>
             <p className="text-slate-400 leading-relaxed">
-              Clicking Disconnect immediately deletes all associated tokens from database records permanently.
+              Posts cannot be published until a server-side integration and provider credentials are configured.
             </p>
           </div>
         </div>

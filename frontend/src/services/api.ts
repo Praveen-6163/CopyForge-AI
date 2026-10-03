@@ -9,10 +9,15 @@ import {
   getEngineHistory,
   toggleEngineSave,
   deleteEngineItem,
-  getPresetTemplates
+  getPresetTemplates,
+  saveEngineGenerationToHistory
 } from './aiEngineService';
 
-const API_BASE = '/api';
+const configuredApiBase = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/+$/, '');
+const API_BASE = configuredApiBase
+  ? (configuredApiBase.endsWith('/api') ? configuredApiBase : `${configuredApiBase}/api`)
+  : '/api';
+const USE_BACKEND_API = import.meta.env.DEV || Boolean(configuredApiBase);
 
 export const apiClient = axios.create({
   baseURL: API_BASE,
@@ -31,24 +36,31 @@ export const getStoredModel = (): string => {
 };
 
 export const fetchHealth = async (): Promise<HealthStatus> => {
+  const apiKeyConfigured = getStoredApiKey().startsWith('sk-');
+  const localHealth: HealthStatus = {
+    status: 'healthy',
+    project_name: 'CopyForge AI',
+    tagline: 'Turn product ideas into platform-ready content.',
+    version: '1.0.0',
+    demo_mode: !apiKeyConfigured,
+    openai_model: apiKeyConfigured ? `${getStoredModel()} (browser key saved)` : 'CopyForge Local Demo Engine',
+    engine_mode: apiKeyConfigured ? 'openai_direct' : 'local_demo'
+  };
+
+  if (!USE_BACKEND_API) return localHealth;
+
   try {
     const res = await apiClient.get<HealthStatus>('/health');
+    if (!res.data || typeof res.data.status !== 'string') {
+      throw new Error('The backend returned an invalid health response.');
+    }
     return {
       ...res.data,
-      demo_mode: false // Fully Functional Mode
+      engine_mode: res.data.demo_mode ? 'backend_demo' : 'backend'
     };
   } catch (error) {
-    const userApiKey = getStoredApiKey();
-    const model = getStoredModel();
-    // Client-side status for Netlify deployment
-    return {
-      status: 'healthy',
-      project_name: 'CopyForge AI',
-      tagline: 'Turn product ideas into platform-ready content.',
-      version: '1.0.0',
-      demo_mode: false,
-      openai_model: userApiKey ? `${model} (Direct Key Connected)` : model
-    };
+    console.warn('Backend health check failed; using the local demo engine.', error);
+    return localHealth;
   }
 };
 
@@ -89,23 +101,29 @@ ${payload.additional_instructions ? `Additional Instructions: ${payload.addition
       );
 
       const text = openAiRes.data.choices[0]?.message?.content || '';
-      const response = generateEngineContent(payload);
+      const response = generateEngineContent(payload, false);
       response.generated_content = text;
       response.formatted_content.raw_text = text;
       response.formatted_content.word_count = text.split(/\s+/).filter(Boolean).length;
       response.formatted_content.char_count = text.length;
       response.is_demo_mode = false;
+      saveEngineGenerationToHistory(response);
       return response;
     } catch (e: any) {
       console.warn('OpenAI Direct API error, using CopyForge Native Engine:', e);
     }
   }
 
+  if (!USE_BACKEND_API) return generateEngineContent(payload);
+
   try {
     const res = await apiClient.post<GenerationResponse>('/generate', payload);
-    return { ...res.data, is_demo_mode: false };
+    if (!res.data || typeof res.data.generated_content !== 'string') {
+      throw new Error('The backend returned an invalid generation response.');
+    }
+    return res.data;
   } catch (error: any) {
-    // Rely on CopyForge Native Engine
+    console.warn('Backend generation failed; using the local demo engine.', error);
     return generateEngineContent(payload);
   }
 };
@@ -135,22 +153,29 @@ export const improveCopy = async (payload: ImproveRequest): Promise<GenerationRe
       );
 
       const text = openAiRes.data.choices[0]?.message?.content || '';
-      const response = improveEngineContent(payload);
+      const response = improveEngineContent(payload, false);
       response.generated_content = text;
       response.formatted_content.raw_text = text;
       response.formatted_content.word_count = text.split(/\s+/).filter(Boolean).length;
       response.formatted_content.char_count = text.length;
       response.is_demo_mode = false;
+      saveEngineGenerationToHistory(response);
       return response;
     } catch (e) {
       console.warn('OpenAI Direct Refinement error, using Native Engine:', e);
     }
   }
 
+  if (!USE_BACKEND_API) return improveEngineContent(payload);
+
   try {
     const res = await apiClient.post<GenerationResponse>('/improve', payload);
-    return { ...res.data, is_demo_mode: false };
+    if (!res.data || typeof res.data.generated_content !== 'string') {
+      throw new Error('The backend returned an invalid refinement response.');
+    }
+    return res.data;
   } catch (error: any) {
+    console.warn('Backend refinement failed; using the local demo engine.', error);
     return improveEngineContent(payload);
   }
 };
@@ -161,6 +186,8 @@ export const fetchHistory = async (
   tone?: string,
   savedOnly: boolean = false
 ): Promise<HistoryItem[]> => {
+  if (!USE_BACKEND_API) return getEngineHistory(search, platform, tone, savedOnly);
+
   try {
     const params: Record<string, any> = {};
     if (search) params.search = search;
@@ -169,35 +196,49 @@ export const fetchHistory = async (
     if (savedOnly) params.saved_only = true;
 
     const res = await apiClient.get<HistoryItem[]>('/history', { params });
+    if (!Array.isArray(res.data)) throw new Error('The backend returned invalid history data.');
     return res.data;
   } catch (error) {
+    console.warn('Backend history is unavailable; using local history.', error);
     return getEngineHistory(search, platform, tone, savedOnly);
   }
 };
 
 export const deleteHistoryItem = async (id: string): Promise<boolean> => {
+  if (!USE_BACKEND_API) return deleteEngineItem(id);
+
   try {
     const res = await apiClient.delete<{ success: boolean }>(`/history/${id}`);
+    if (typeof res.data?.success !== 'boolean') throw new Error('The backend returned an invalid delete response.');
     return res.data.success;
   } catch (error) {
+    console.warn('Backend history delete failed; deleting from local history.', error);
     return deleteEngineItem(id);
   }
 };
 
 export const toggleSaveItem = async (id: string): Promise<boolean> => {
+  if (!USE_BACKEND_API) return toggleEngineSave(id);
+
   try {
     const res = await apiClient.post<{ is_saved: boolean }>(`/history/${id}/toggle-save`);
+    if (typeof res.data?.is_saved !== 'boolean') throw new Error('The backend returned an invalid bookmark response.');
     return res.data.is_saved;
   } catch (error) {
+    console.warn('Backend bookmark update failed; using local history.', error);
     return toggleEngineSave(id);
   }
 };
 
 export const fetchTemplates = async (): Promise<TemplateItem[]> => {
+  if (!USE_BACKEND_API) return getPresetTemplates();
+
   try {
     const res = await apiClient.get<TemplateItem[]>('/templates');
+    if (!Array.isArray(res.data)) throw new Error('The backend returned invalid template data.');
     return res.data;
   } catch (error) {
+    console.warn('Backend templates are unavailable; using built-in templates.', error);
     return getPresetTemplates();
   }
 };

@@ -12,31 +12,70 @@ import {
 } from 'lucide-react';
 import { Button, Badge, Card, Input } from '../components/ui';
 
-export const AIVoicePage: React.FC = () => {
-  const [writingStyle, setWritingStyle] = useState('First-principles, authoritative yet conversational, concise bullet insights with actionable takeaways.');
-  const [tone, setTone] = useState('Professional & Visionary');
-  const [targetAudience, setTargetAudience] = useState('AI Engineers, Technical Founders, SaaS Operators');
-  const [primaryTopics, setPrimaryTopics] = useState('Autonomous Agents, Reasoning Models, Spec-Driven Development, Edge AI');
-  const [preferredCTA, setPreferredCTA] = useState('Ask an open architectural question to spark discussion in comments.');
-  const [preferredHashtags, setPreferredHashtags] = useState('#GenerativeAI #AIEngineering #TechTrends #SoftwareArchitecture');
-  const [wordsToAvoid, setWordsToAvoid] = useState('delve, game-changer, revolutionary, unlock, leverage, synergy');
+interface VoiceProfile {
+  writingStyle: string;
+  tone: string;
+  targetAudience: string;
+  primaryTopics: string;
+  preferredCTA: string;
+  preferredHashtags: string;
+  wordsToAvoid: string;
+}
 
+const DEFAULT_VOICE_PROFILE: VoiceProfile = {
+  writingStyle: 'First-principles, authoritative yet conversational, concise bullet insights with actionable takeaways.',
+  tone: 'Professional & Visionary',
+  targetAudience: 'AI Engineers, Technical Founders, SaaS Operators',
+  primaryTopics: 'Autonomous Agents, Reasoning Models, Spec-Driven Development, Edge AI',
+  preferredCTA: 'Ask an open architectural question to spark discussion in comments.',
+  preferredHashtags: '#GenerativeAI #AIEngineering #TechTrends #SoftwareArchitecture',
+  wordsToAvoid: 'delve, game-changer, revolutionary, unlock, leverage, synergy',
+};
+
+const getStoredVoiceProfile = (): VoiceProfile => {
+  try {
+    const stored = localStorage.getItem('copyforge_voice_profile_v1');
+    if (!stored) return DEFAULT_VOICE_PROFILE;
+    const parsed: unknown = JSON.parse(stored);
+    if (typeof parsed !== 'object' || parsed === null) throw new Error('Saved voice profile is not an object.');
+    return { ...DEFAULT_VOICE_PROFILE, ...(parsed as Partial<VoiceProfile>) };
+  } catch (error) {
+    console.warn('Could not load the saved voice profile.', error);
+    return DEFAULT_VOICE_PROFILE;
+  }
+};
+
+export const AIVoicePage: React.FC = () => {
+  const [profile, setProfile] = useState<VoiceProfile>(getStoredVoiceProfile);
   const [sampleOutput, setSampleOutput] = useState(`Most AI benchmarks measure raw pre-training memorization.\n\nIn real production environments, that's almost meaningless.\n\nWhat actually separates high-performing AI systems today:\n1. Test-time reasoning compute scaling\n2. Deterministic tool verification loops\n3. Clean architectural boundaries between subagents\n\nIf your team is evaluating models this quarter, stop looking at static MMLU scores. Benchmark against multi-step failure recovery instead.\n\nHow is your engineering team testing model reliability in production?`);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   const handleGenerateSample = () => {
     setIsGenerating(true);
+    const topic = profile.primaryTopics.split(',')[0].trim() || 'Your topic';
+    setSampleOutput(`${topic} is changing how ${profile.targetAudience} approach their work.\n\n${profile.writingStyle}\n\n${profile.preferredCTA}\n\n${profile.preferredHashtags}`);
     setTimeout(() => {
       setIsGenerating(false);
     }, 800);
   };
 
   const handleSave = () => {
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+    try {
+      localStorage.setItem('copyforge_voice_profile_v1', JSON.stringify(profile));
+      setSaveError('');
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 2500);
+    } catch (error) {
+      console.error('Could not save the voice profile.', error);
+      setSaveError('Could not save this profile. Check browser storage permissions.');
+    }
   };
+
+  const updateProfile = (key: keyof VoiceProfile, value: string) =>
+    setProfile((current) => ({ ...current, [key]: value }));
 
   return (
     <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-8 animate-fade-in">
@@ -50,7 +89,7 @@ export const AIVoicePage: React.FC = () => {
             Teach CopyForge how you write.
           </h1>
           <p className="text-xs md:text-sm text-slate-400">
-            Define your distinct vocabulary, sentence rhythms, and anti-cliché filters to guarantee every draft sounds authentically human.
+            Save a voice profile in this browser and preview a sample template. The content generator does not yet apply this profile automatically.
           </p>
         </div>
 
@@ -61,10 +100,11 @@ export const AIVoicePage: React.FC = () => {
             icon={Save}
             onClick={handleSave}
           >
-            {savedSuccess ? 'Voice Profile Saved!' : 'Save Voice Profile'}
+            {savedSuccess ? 'Saved Locally!' : 'Save Voice Profile'}
           </Button>
         </div>
       </div>
+      {saveError && <p role="alert" className="text-xs text-rose-300">{saveError}</p>}
 
       {/* ── Split Profile Matrix ───────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -83,8 +123,8 @@ export const AIVoicePage: React.FC = () => {
               </label>
               <textarea
                 rows={2}
-                value={writingStyle}
-                onChange={(e) => setWritingStyle(e.target.value)}
+                value={profile.writingStyle}
+                onChange={(e) => updateProfile('writingStyle', e.target.value)}
                 className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 resize-none leading-relaxed"
               />
             </div>
@@ -97,8 +137,8 @@ export const AIVoicePage: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={tone}
-                  onChange={(e) => setTone(e.target.value)}
+                  value={profile.tone}
+                  onChange={(e) => updateProfile('tone', e.target.value)}
                   className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
@@ -109,8 +149,8 @@ export const AIVoicePage: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  value={targetAudience}
-                  onChange={(e) => setTargetAudience(e.target.value)}
+                  value={profile.targetAudience}
+                  onChange={(e) => updateProfile('targetAudience', e.target.value)}
                   className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
@@ -123,8 +163,8 @@ export const AIVoicePage: React.FC = () => {
               </label>
               <input
                 type="text"
-                value={primaryTopics}
-                onChange={(e) => setPrimaryTopics(e.target.value)}
+                value={profile.primaryTopics}
+                onChange={(e) => updateProfile('primaryTopics', e.target.value)}
                 className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
               />
             </div>
@@ -136,8 +176,8 @@ export const AIVoicePage: React.FC = () => {
               </label>
               <input
                 type="text"
-                value={preferredCTA}
-                onChange={(e) => setPreferredCTA(e.target.value)}
+                value={profile.preferredCTA}
+                onChange={(e) => updateProfile('preferredCTA', e.target.value)}
                 className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
               />
             </div>
@@ -149,8 +189,8 @@ export const AIVoicePage: React.FC = () => {
               </label>
               <input
                 type="text"
-                value={preferredHashtags}
-                onChange={(e) => setPreferredHashtags(e.target.value)}
+                value={profile.preferredHashtags}
+                onChange={(e) => updateProfile('preferredHashtags', e.target.value)}
                 className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
               />
             </div>
@@ -165,21 +205,21 @@ export const AIVoicePage: React.FC = () => {
               </div>
               <input
                 type="text"
-                value={wordsToAvoid}
-                onChange={(e) => setWordsToAvoid(e.target.value)}
+                value={profile.wordsToAvoid}
+                onChange={(e) => updateProfile('wordsToAvoid', e.target.value)}
                 className="w-full bg-slate-900/90 border border-rose-500/30 rounded-xl px-4 py-2 text-xs text-rose-200 focus:outline-none focus:border-rose-500"
               />
             </div>
           </div>
         </div>
 
-        {/* ── RIGHT: Live Voice Preview (5 cols) ───────────────────── */}
+        {/* ── RIGHT: Local Voice Preview (5 cols) ─────────────────── */}
         <div className="lg:col-span-5 space-y-6">
           <div className="editorial-card rounded-2xl p-6 border border-white/10 space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
               <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
                 <Eye className="w-4 h-4 text-indigo-400" />
-                Your AI voice preview
+                Local voice sample (template preview)
               </h3>
               <Button
                 variant="primary"
@@ -198,7 +238,7 @@ export const AIVoicePage: React.FC = () => {
 
             <div className="p-3.5 rounded-xl bg-slate-950/60 border border-white/[0.06] flex items-center justify-between text-xs">
               <span className="text-slate-400">Voice Match Confidence</span>
-              <span className="font-mono text-emerald-400 font-bold">99.4% Human Parity</span>
+              <span className="font-mono text-amber-400 font-bold">Not AI-generated</span>
             </div>
           </div>
         </div>

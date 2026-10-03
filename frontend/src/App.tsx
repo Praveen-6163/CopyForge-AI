@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Menu, Sparkles } from 'lucide-react';
 
 // ─── Existing components (preserved) ─────────────────────────────────────────
 import { Navbar } from './components/Navbar';
@@ -34,6 +35,7 @@ import {
 import {
   fetchHealth, generateCopy, improveCopy, toggleSaveItem
 } from './services/api';
+import { getWorkspacePreferences } from './services/workspacePreferences';
 
 const DEFAULT_FORM: GenerateRequest = {
   product_name: 'CopyForge AI',
@@ -46,8 +48,25 @@ const DEFAULT_FORM: GenerateRequest = {
   parameters: { temperature: 0.5, top_p: 0.9, max_tokens: 750 },
 };
 
+const getDefaultForm = (): GenerateRequest => {
+  const preferences = getWorkspacePreferences();
+  return {
+    ...DEFAULT_FORM,
+    platform: preferences.defaultPlatform,
+    tone: preferences.defaultTone,
+    audience: preferences.defaultAudience,
+    objective: preferences.defaultObjective,
+  };
+};
+
 export const App: React.FC = () => {
+  const navigate = useNavigate();
   const [health, setHealth] = useState<HealthStatus | null>(null);
+  const [dashboardContent, setDashboardContent] = useState<{
+    linkedin: GenerationResponse | null;
+    instagram: GenerationResponse | null;
+  }>({ linkedin: null, instagram: null });
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   // ─── Modals/Drawers (existing) ──────────────────────────────────────────────
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -57,7 +76,7 @@ export const App: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // ─── Generation State (existing) ───────────────────────────────────────────
-  const [formData, setFormData] = useState<GenerateRequest>(DEFAULT_FORM);
+  const [formData, setFormData] = useState<GenerateRequest>(getDefaultForm);
   const [generationOutput, setGenerationOutput] = useState<GenerationResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [pipelineStage, setPipelineStage] = useState<PipelineStage>('idle');
@@ -85,6 +104,43 @@ export const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleDashboardGenerate = async () => {
+    setIsLoading(true);
+    setPipelineStage('prompt_compiling');
+    try {
+      setPipelineStage('ai_generating');
+      const [linkedin, instagram] = await Promise.all([
+        generateCopy({ ...formData, platform: 'LinkedIn' }),
+        generateCopy({ ...formData, platform: 'Instagram' }),
+      ]);
+      setDashboardContent({ linkedin, instagram });
+      setGenerationOutput(linkedin);
+      setFormData((current) => ({ ...current, platform: 'LinkedIn' }));
+      setPipelineStage('ready');
+    } catch (error) {
+      console.error('Dashboard content generation failed.', error);
+      alert('Could not generate content. Check the AI settings and try again.');
+      setPipelineStage('idle');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleEditDashboardContent = (item: GenerationResponse) => {
+    setGenerationOutput(item);
+    setFormData((current) => ({
+      ...current,
+      product_name: item.product_name,
+      product_description: item.product_description,
+      platform: item.platform,
+      tone: item.tone,
+      audience: item.audience,
+      objective: item.objective as GenerateRequest['objective'],
+    }));
+    setPipelineStage('ready');
+    navigate('/studio');
   };
 
   const handleRefine = async (
@@ -148,7 +204,7 @@ export const App: React.FC = () => {
       generated_content: item.generated_content,
       formatted_content: { raw_text: item.generated_content, word_count: words, char_count: chars },
       platform_validation: { is_valid: true, passed_rules: ['Loaded from history'], warnings: [], platform_constraints: {} },
-      is_demo_mode: false, is_saved: item.is_saved, created_at: item.created_at,
+      is_demo_mode: item.is_demo_mode ?? false, is_saved: item.is_saved, created_at: item.created_at,
     });
     setPipelineStage('ready');
   };
@@ -167,20 +223,35 @@ export const App: React.FC = () => {
   const handleResetForm = () => {
     setGenerationOutput(null);
     setPipelineStage('idle');
+    const defaults = getDefaultForm();
     setFormData({
-      product_name: '', product_description: '',
-      platform: 'LinkedIn', tone: 'Professional',
-      audience: 'General', objective: 'Product launch',
+      ...defaults,
+      product_name: '',
+      product_description: '',
       additional_instructions: '',
-      parameters: { temperature: 0.5, top_p: 0.9, max_tokens: 750 },
     });
   };
 
   // ─── Shell: Shared layout for all authenticated pages ───────────────────────
   const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
     <div className="min-h-screen flex bg-[#0b0f19] text-slate-100 font-sans antialiased">
-      <NewSidebar health={health} />
+      <NewSidebar
+        health={health}
+        mobileOpen={isMobileNavOpen}
+        onClose={() => setIsMobileNavOpen(false)}
+        onOpenHistory={(savedOnly) => {
+          setSavedOnlyMode(savedOnly);
+          setIsHistoryOpen(true);
+          setIsMobileNavOpen(false);
+        }}
+      />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="cf-mobile-topbar md:hidden">
+          <button type="button" aria-label="Open navigation" onClick={() => setIsMobileNavOpen(true)}>
+            <Menu className="h-5 w-5" />
+          </button>
+          <div><Sparkles className="h-4 w-4 text-sky-300" /> CopyForge</div>
+        </div>
         <Navbar health={health} onOpenSettings={() => setIsSettingsOpen(true)} />
         <div className="flex-1 overflow-y-auto">
           {children}
@@ -211,6 +282,9 @@ export const App: React.FC = () => {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         health={health}
+        onSettingsSaved={() => {
+          fetchHealth().then(setHealth).catch(console.error);
+        }}
       />
     </div>
   );
@@ -223,7 +297,18 @@ export const App: React.FC = () => {
       {/* All platform routes inside AppShell */}
       <Route path="/" element={
         <AppShell>
-          <DashboardPage />
+          <DashboardPage
+            health={health}
+            generation={generationOutput}
+            dashboardContent={dashboardContent}
+            isGenerating={isLoading}
+            onGenerate={handleDashboardGenerate}
+            onEditContent={handleEditDashboardContent}
+            onOpenHistory={(savedOnly) => {
+              setSavedOnlyMode(savedOnly);
+              setIsHistoryOpen(true);
+            }}
+          />
         </AppShell>
       } />
 

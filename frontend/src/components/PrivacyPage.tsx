@@ -152,24 +152,22 @@ export const PrivacyPage: React.FC = () => {
           {/* Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-brand-500/10 border border-brand-500/30 text-brand-300 text-xs font-semibold mb-6 tracking-wide uppercase">
             <Shield className="w-3.5 h-3.5" />
-            Legal Document
+            Prototype Disclosure
           </div>
 
           <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight mb-4">
             <span className="text-gradient">Privacy Policy</span>
           </h1>
           <p className="text-slate-400 text-lg leading-relaxed max-w-2xl mx-auto">
-            At <span className="text-white font-semibold">CopyForge AI</span>, your privacy is a first-class priority.
-            This policy explains what data we collect, how we use it, and the controls you have.
+            This page describes the current demo's data behavior. It is not a reviewed legal policy or a compliance certification.
           </p>
 
           {/* Meta chips */}
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             {[
-              { label: `Effective: ${EFFECTIVE_DATE}`, color: 'bg-slate-800 border-slate-700 text-slate-300' },
-              { label: 'GDPR Aligned',    color: 'bg-emerald-900/30 border-emerald-600/40 text-emerald-300' },
-              { label: 'CCPA Compliant',  color: 'bg-blue-900/30 border-blue-600/40 text-blue-300' },
-              { label: 'No Data Selling', color: 'bg-purple-900/30 border-purple-600/40 text-purple-300' },
+              { label: `Updated: ${EFFECTIVE_DATE}`, color: 'bg-slate-800 border-slate-700 text-slate-300' },
+              { label: 'Prototype', color: 'bg-amber-900/30 border-amber-600/40 text-amber-300' },
+              { label: 'Browser-based demo', color: 'bg-blue-900/30 border-blue-600/40 text-blue-300' },
             ].map(({ label, color }) => (
               <span key={label} className={`px-3 py-1 rounded-full text-xs font-medium border ${color}`}>
                 {label}
@@ -236,27 +234,22 @@ export const PrivacyPage: React.FC = () => {
               />
               <InfoCard>
                 <p className="text-slate-300 text-sm leading-relaxed">
-                  This Privacy Policy applies to <Highlight>CopyForge AI</Highlight> (the "Service"), an AI-powered
-                  copywriting and tone-transformation platform accessible at{' '}
+                  This prototype disclosure describes the current demo at{' '}
                   <a href={APP_URL} target="_blank" rel="noopener noreferrer"
                     className="text-brand-400 hover:underline inline-flex items-center gap-1">
                     {APP_URL} <ExternalLink className="w-3 h-3" />
                   </a>.
                 </p>
                 <p className="text-slate-300 text-sm leading-relaxed mt-3">
-                  By using CopyForge AI, you agree to the collection and use of information in accordance with this
-                  policy. We do not sell, rent, or trade your personal data to third parties. We are committed to
-                  transparency about our data practices.
+                  This is not legal advice or a verified privacy policy. Detailed descriptions of planned production services in the sections below are not guarantees about this demo.
                 </p>
               </InfoCard>
               <InfoCard accent="border-amber-500/30">
                 <p className="text-amber-300 text-xs font-semibold uppercase tracking-wide mb-2">
-                  ⚠ Important Notice
+                  Current demo behavior
                 </p>
                 <p className="text-slate-300 text-sm leading-relaxed">
-                  CopyForge AI integrates with third-party social platforms (LinkedIn, Instagram) via OAuth.
-                  When you connect these accounts, we handle access tokens strictly in accordance with the
-                  respective platform's terms of service. <Highlight>We never post on your behalf without explicit action.</Highlight>
+                  Generated drafts, bookmarks, and workspace preferences are stored in this browser. If you save an OpenAI key, this demo stores it in browser local storage and sends it directly to OpenAI when used. Do not enter confidential data. Social OAuth, publishing, scheduling, and live analytics are not configured.
                 </p>
               </InfoCard>
             </section>

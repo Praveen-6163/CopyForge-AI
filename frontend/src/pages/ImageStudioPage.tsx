@@ -64,10 +64,10 @@ export const ImageStudioPage: React.FC = () => {
           </span>
           <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
             Image Studio
-            <Badge variant="purple">Midjourney & DALL-E 3</Badge>
+            <Badge variant="warning">Sample assets</Badge>
           </h1>
           <p className="text-xs md:text-sm text-slate-400">
-            Generate cinematic 3D renders, infographics, and editorial artwork matching your written narrative.
+            Preview bundled artwork by style. No image-generation provider is configured in this demo.
           </p>
         </div>
 
@@ -168,7 +168,7 @@ export const ImageStudioPage: React.FC = () => {
               loading={isGenerating}
               onClick={handleGenerate}
             >
-              {isGenerating ? 'Synthesizing Visual...' : 'Generate AI Visual'}
+              {isGenerating ? 'Loading Sample...' : 'Preview Sample Visual'}
             </Button>
           </div>
         </div>
@@ -188,7 +188,7 @@ export const ImageStudioPage: React.FC = () => {
               {generatedImage && (
                 <div className="flex items-center gap-2">
                   <Button variant="ghost" size="sm" icon={RotateCcw} onClick={handleGenerate}>
-                    Regenerate
+                    Change Sample
                   </Button>
                   <Button
                     variant="secondary"
@@ -196,7 +196,7 @@ export const ImageStudioPage: React.FC = () => {
                     icon={Download}
                     onClick={() => window.open(generatedImage, '_blank')}
                   >
-                    Download 4K
+                    Open Sample Image
                   </Button>
                 </div>
               )}
@@ -215,7 +215,7 @@ export const ImageStudioPage: React.FC = () => {
                   <div className="absolute bottom-4 left-6 right-6 flex items-center justify-between">
                     <div>
                       <p className="text-sm font-bold text-white tracking-tight">{topic}</p>
-                      <p className="text-xs text-slate-300 font-mono">Render resolution: 3840 x 2160 • 300 DPI</p>
+                      <p className="text-xs text-slate-300 font-mono">Bundled sample artwork</p>
                     </div>
                     <Button
                       variant="primary"
@@ -231,7 +231,7 @@ export const ImageStudioPage: React.FC = () => {
                 {/* Preset Style Library Showcase */}
                 <div className="pt-2 space-y-2">
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    Recent Generated Artworks
+                    Bundled Sample Artwork
                   </p>
                   <div className="grid grid-cols-3 gap-3">
                     <div 
@@ -263,7 +263,7 @@ export const ImageStudioPage: React.FC = () => {
                 <div className="space-y-1">
                   <h4 className="text-base font-bold text-white">Create the visual for your next idea.</h4>
                   <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    Select a visual style, enter your prompt directives, and render custom high-resolution assets.
+                    Select a style to preview bundled artwork. Custom image generation is not configured.
                   </p>
                 </div>
               </div>

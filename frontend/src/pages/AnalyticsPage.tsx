@@ -27,11 +27,12 @@ export const AnalyticsPage: React.FC = () => {
             Analytics & ROI
           </h1>
           <p className="text-xs md:text-sm text-slate-400">
-            Real-time tracking of impressions, comment velocities, and cross-platform organic distribution.
+            Illustrative sample metrics only. Connect publishing accounts and analytics sources to see real performance.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
+          <Badge variant="warning">Sample data</Badge>
           <span className="text-xs font-mono text-slate-400">Timeframe:</span>
           <span className="px-3 py-1 rounded-xl bg-slate-900 border border-white/10 text-xs font-bold text-white">
             Last 30 Days

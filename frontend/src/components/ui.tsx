@@ -477,13 +477,14 @@ export interface SocialAccountCardProps {
   status: 'connected' | 'disconnected';
   accountName?: string;
   lastSynced?: string;
-  onConnect: () => void;
+  onConnect?: () => void;
   onDisconnect?: () => void;
   connecting?: boolean;
+  connectAvailable?: boolean;
 }
 
 export const SocialAccountCard: React.FC<SocialAccountCardProps> = ({
-  platform, name, description, status, accountName, lastSynced, onConnect, onDisconnect, connecting
+  platform, name, description, status, accountName, lastSynced, onConnect, onDisconnect, connecting, connectAvailable = true
 }) => {
   const isConnected = status === 'connected';
   const isLinkedIn = platform === 'linkedin';
@@ -519,14 +520,17 @@ export const SocialAccountCard: React.FC<SocialAccountCardProps> = ({
         </div>
       ) : (
         <div className="mt-4 pt-4 border-t border-white/[0.06] flex items-center justify-between">
-          <p className="text-xs text-slate-400">Official OAuth 2.0 connection</p>
-          <Button 
+          <p className="text-xs text-slate-400">
+            {connectAvailable ? 'Official OAuth 2.0 connection' : 'OAuth provider is not configured in this demo.'}
+          </p>
+          <Button
             variant="primary" 
             size="sm" 
-            onClick={onConnect} 
+            onClick={onConnect}
             loading={connecting}
+            disabled={!connectAvailable}
           >
-            Connect {name}
+            {connectAvailable ? `Connect ${name}` : 'Unavailable'}
           </Button>
         </div>
       )}

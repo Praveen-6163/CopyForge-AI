@@ -84,6 +84,7 @@ export interface HistoryItem {
   prompt_parameters: Record<string, any>;
   is_saved: boolean;
   created_at: string;
+  is_demo_mode?: boolean;
 }
 
 export interface TemplateItem {
@@ -107,6 +108,7 @@ export interface HealthStatus {
   version: string;
   demo_mode: boolean;
   openai_model: string;
+  engine_mode?: 'local_demo' | 'openai_direct' | 'backend' | 'backend_demo';
 }
 
 export type PipelineStage = 'idle' | 'brief' | 'prompt_compiling' | 'ai_generating' | 'validating' | 'ready';

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Settings, CheckCircle2, Cpu, Key, Eye, EyeOff, Save, Trash2, Zap } from 'lucide-react';
+import { X, Settings, CheckCircle2, Cpu, Key, Eye, EyeOff, Save, Trash2, AlertCircle } from 'lucide-react';
 import { HealthStatus } from '../types/generation';
 import { getStoredApiKey, getStoredModel } from '../services/api';
 
@@ -20,12 +20,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [model, setModel] = useState('gpt-4o-mini');
   const [showApiKey, setShowApiKey] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [saveError, setSaveError] = useState('');
 
   useEffect(() => {
     if (isOpen) {
       setApiKey(getStoredApiKey());
       setModel(getStoredModel());
       setSavedSuccess(false);
+      setSaveError('');
     }
   }, [isOpen]);
 
@@ -33,20 +35,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem('copyforge_openai_api_key', apiKey.trim());
-    localStorage.setItem('copyforge_openai_model', model);
-    setSavedSuccess(true);
-    if (onSettingsSaved) onSettingsSaved();
-    setTimeout(() => {
-      setSavedSuccess(false);
-    }, 2500);
+    try {
+      localStorage.setItem('copyforge_openai_api_key', apiKey.trim());
+      localStorage.setItem('copyforge_openai_model', model);
+      setSaveError('');
+      setSavedSuccess(true);
+      if (onSettingsSaved) onSettingsSaved();
+      setTimeout(() => setSavedSuccess(false), 2500);
+    } catch (error) {
+      console.error('Could not save AI settings.', error);
+      setSaveError('Could not save settings. Check browser storage permissions.');
+    }
   };
 
   const handleClearKey = () => {
-    localStorage.removeItem('copyforge_openai_api_key');
-    setApiKey('');
-    setSavedSuccess(true);
-    if (onSettingsSaved) onSettingsSaved();
+    try {
+      localStorage.removeItem('copyforge_openai_api_key');
+      setApiKey('');
+      setSaveError('');
+      setSavedSuccess(true);
+      if (onSettingsSaved) onSettingsSaved();
+    } catch (error) {
+      console.error('Could not clear the saved API key.', error);
+      setSaveError('Could not clear the API key. Check browser storage permissions.');
+    }
   };
 
   return (
@@ -74,17 +86,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Content Body */}
         <form onSubmit={handleSave} className="p-6 space-y-5 text-xs">
           {/* Status Box */}
-          <div className="p-4 rounded-xl bg-slate-900/90 border border-emerald-500/30 space-y-2">
+          <div className="p-4 rounded-xl bg-slate-900/90 border border-amber-500/30 space-y-2">
             <div className="flex items-center justify-between">
               <span className="font-semibold text-slate-200 flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" /> System Status
+                <AlertCircle className="w-4 h-4 text-amber-400" /> Current Mode
               </span>
-              <span className="px-2.5 py-1 rounded-full bg-emerald-400/10 text-emerald-400 font-mono font-semibold border border-emerald-400/30 flex items-center gap-1">
-                Fully Functional Mode
+              <span className="px-2.5 py-1 rounded-full bg-amber-400/10 text-amber-300 font-mono font-semibold border border-amber-400/30 flex items-center gap-1">
+                {health?.engine_mode === 'backend'
+                  ? 'Backend Connected'
+                  : health?.engine_mode === 'openai_direct'
+                    ? 'OpenAI Key Saved'
+                    : 'Local Demo Mode'}
               </span>
             </div>
             <p className="text-slate-400 leading-relaxed text-[11px]">
-              CopyForge AI engine is operating in fully functional mode. You can optionaly connect your custom OpenAI API Key below to direct calls to your personal OpenAI billing account.
+              Without a configured backend or OpenAI key, content is generated locally in this browser. Social publishing and scheduled jobs are not available in this demo.
             </p>
           </div>
 
@@ -95,7 +111,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <Key className="w-4 h-4 text-brand-400" /> OpenAI API Key (Optional Client Direct)
               </span>
               {apiKey && (
-                <span className="text-[10px] text-emerald-400 font-mono font-normal">Key Configured</span>
+                <span className="text-[10px] text-amber-300 font-mono font-normal">Saved in this browser</span>
               )}
             </label>
             <div className="relative">
@@ -127,8 +143,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
               </div>
             </div>
+            {saveError && <p role="alert" className="text-rose-300">{saveError}</p>}
             <p className="text-[10px] text-slate-500">
-              Your API key is stored locally in your browser's encrypted local storage and never leaves your browser.
+              Stored in this browser's local storage and sent directly to OpenAI when used. It is not encrypted by this demo.
             </p>
           </div>
 

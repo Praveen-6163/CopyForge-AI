@@ -2,8 +2,6 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Calendar as CalendarIcon,
-  ChevronLeft,
-  ChevronRight,
   Plus,
   Clock,
   Send,
@@ -13,8 +11,9 @@ import {
   Linkedin,
   Instagram
 } from 'lucide-react';
-import { Button, Badge, PlatformBadge, PostStatusBadge, Tabs } from '../components/ui';
-import { PostStatus } from '../types/platform';
+import { Button, PlatformBadge, PostStatusBadge, Tabs } from '../components/ui';
+import { PostStatus, ScheduledPost } from '../types/platform';
+import { getScheduledPosts } from '../services/scheduledPosts';
 
 interface CalendarEvent {
   id: string;
@@ -25,6 +24,7 @@ interface CalendarEvent {
   status: PostStatus;
   thumbnail?: string;
   hook: string;
+  dateLabel?: string;
 }
 
 const SCHEDULED_ITEMS: CalendarEvent[] = [
@@ -81,16 +81,32 @@ const SCHEDULED_ITEMS: CalendarEvent[] = [
 export const ContentCalendarPage: React.FC = () => {
   const navigate = useNavigate();
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [currentMonth, setCurrentMonth] = useState('October 2026');
+  const currentMonth = 'October 2026';
+  const [localSchedules] = useState<ScheduledPost[]>(getScheduledPosts);
 
+  const savedEvents: CalendarEvent[] = localSchedules.map((post) => {
+    const date = new Date(post.scheduledAt);
+    return {
+      id: post.id,
+      day: date.getDate(),
+      time: date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
+      topic: post.topic,
+      platform: post.platform,
+      status: post.status,
+      thumbnail: post.imageUrl,
+      hook: post.content,
+      dateLabel: date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
+    };
+  });
+  const calendarEvents = [...savedEvents, ...SCHEDULED_ITEMS];
   const filterTabs = [
-    { id: 'all', label: 'All Events', count: SCHEDULED_ITEMS.length },
-    { id: 'scheduled', label: 'Scheduled', count: 2 },
-    { id: 'awaiting_approval', label: 'In Approval', count: 1 },
-    { id: 'draft', label: 'Drafts', count: 2 },
+    { id: 'all', label: 'All Events', count: calendarEvents.length },
+    { id: 'scheduled', label: 'Scheduled', count: calendarEvents.filter((event) => event.status === 'scheduled').length },
+    { id: 'awaiting_approval', label: 'In Approval', count: calendarEvents.filter((event) => event.status === 'awaiting_approval').length },
+    { id: 'draft', label: 'Drafts', count: calendarEvents.filter((event) => event.status === 'draft').length },
   ];
 
-  const filteredEvents = SCHEDULED_ITEMS.filter(e => 
+  const filteredEvents = calendarEvents.filter(e =>
     selectedStatus === 'all' || e.status === selectedStatus
   );
 
@@ -106,19 +122,13 @@ export const ContentCalendarPage: React.FC = () => {
             Content Calendar
           </h1>
           <p className="text-xs md:text-sm text-slate-400">
-            Editorial publishing schedule across connected LinkedIn and Instagram channels.
+            Example editorial items for the demo. Nothing here is scheduled for external publishing.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1 bg-slate-900/90 border border-white/10 rounded-xl p-1">
-            <button className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-400 hover:text-white">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="text-xs font-bold text-white px-3 font-mono">{currentMonth}</span>
-            <button className="p-1.5 rounded-lg hover:bg-white/[0.06] text-slate-400 hover:text-white">
-              <ChevronRight className="w-4 h-4" />
-            </button>
+            <span className="text-xs font-bold text-white px-3 font-mono">{currentMonth} · Sample</span>
           </div>
 
           <Button
@@ -127,7 +137,7 @@ export const ContentCalendarPage: React.FC = () => {
             icon={Plus}
             onClick={() => navigate('/studio')}
           >
-            New Schedule
+            Create Draft
           </Button>
         </div>
       </div>
@@ -155,8 +165,8 @@ export const ContentCalendarPage: React.FC = () => {
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/10 flex flex-col items-center justify-center font-mono text-xs">
-                    <span className="text-[9px] text-slate-500 uppercase">OCT</span>
-                    <span className="font-bold text-white">{item.day < 10 ? `0${item.day}` : item.day}</span>
+                    <span className="text-[9px] text-slate-500 uppercase">{item.dateLabel?.split(' ')[0] || 'OCT'}</span>
+                    <span className="font-bold text-white">{item.dateLabel ? item.dateLabel.split(' ')[1]?.replace(',', '') : item.day < 10 ? `0${item.day}` : item.day}</span>
                   </div>
                   <div>
                     <PlatformBadge platform={item.platform} />
@@ -183,7 +193,9 @@ export const ContentCalendarPage: React.FC = () => {
             </div>
 
             <div className="pt-4 mt-4 border-t border-white/[0.06] flex items-center justify-between text-xs">
-              <span className="text-slate-500 font-mono text-[11px]">Auto-publish enabled</span>
+              <span className="text-slate-500 font-mono text-[11px]">
+                {localSchedules.some((scheduled) => scheduled.id === item.id) ? 'Local reminder · not published' : 'Demo item · not scheduled'}
+              </span>
               <Button
                 variant="ghost"
                 size="sm"

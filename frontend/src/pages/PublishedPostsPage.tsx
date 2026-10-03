@@ -22,7 +22,7 @@ export const PublishedPostsPage: React.FC = () => {
             Published Posts
           </h1>
           <p className="text-xs md:text-sm text-slate-400">
-            Audit history of distributed content with real-time engagement telemetry across channels.
+            Example post cards and illustrative metrics. No content has been published from this demo.
           </p>
         </div>
 
@@ -41,7 +41,7 @@ export const PublishedPostsPage: React.FC = () => {
         <EmptyState
           icon={Send}
           title="No published posts yet"
-          description="Approved and scheduled content will appear here with live engagement counters once broadcasted."
+          description="This demo includes sample cards only; it does not publish posts or receive real engagement metrics."
         />
       ) : (
         <div className="space-y-6">
@@ -52,11 +52,11 @@ export const PublishedPostsPage: React.FC = () => {
                   <div className="flex items-center gap-2 mb-2">
                     <PlatformBadge platform={post.platform} />
                     <Badge variant="purple">{post.contentType}</Badge>
-                    <Badge variant="success" dot>Published</Badge>
+                    <Badge variant="warning">Sample post</Badge>
                   </div>
                   <h3 className="text-base font-bold text-white mb-1">{post.topic}</h3>
                   <p className="text-xs font-mono text-slate-500">
-                    Broadcasted {post.publishedAt ? new Date(post.publishedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'recently'}
+                    Sample date {post.publishedAt ? new Date(post.publishedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'not set'}
                   </p>
                 </div>
               </div>
