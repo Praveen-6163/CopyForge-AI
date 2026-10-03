@@ -9,14 +9,10 @@ import {
   CheckSquare,
   Send,
   Share2,
-  Linkedin,
-  Instagram,
   Zap,
-  Mic,
   BarChart3,
   Settings,
   Sparkles,
-  ShieldAlert,
   History,
   Bookmark
 } from 'lucide-react';
@@ -36,7 +32,7 @@ interface NavItem {
   label: string;
   icon: React.ElementType;
   badge?: string;
-  badgeVariant?: 'default' | 'purple' | 'amber';
+  badgeVariant?: 'default' | 'purple';
 }
 
 interface NavSection {
@@ -49,31 +45,29 @@ const NAV_SECTIONS: NavSection[] = [
     title: 'HOME',
     items: [
       { to: '/', label: 'Dashboard', icon: LayoutDashboard },
-      { to: '/trend-radar', label: 'Trend Radar', icon: Radio, badge: 'Demo', badgeVariant: 'amber' },
+      { to: '/trend-radar', label: 'Trend Radar', icon: Radio },
       { to: '/studio', label: 'Content Studio', icon: PenTool },
-      { to: '/image-studio', label: 'Image Studio', icon: ImageIcon, badge: 'New', badgeVariant: 'purple' },
+      { to: '/image-studio', label: 'Image Studio', icon: ImageIcon },
     ],
   },
   {
     title: 'CONTENT',
     items: [
       { to: '/calendar', label: 'Content Calendar', icon: Calendar },
-      { to: '/approvals', label: 'Approval Queue', icon: CheckSquare, badge: '2', badgeVariant: 'amber' },
+      { to: '/approvals', label: 'Approval Queue', icon: CheckSquare },
       { to: '/published', label: 'Published Posts', icon: Send },
     ],
   },
   {
     title: 'SOCIAL',
     items: [
-      { to: '/social/linkedin', label: 'LinkedIn', icon: Linkedin },
-      { to: '/social/instagram', label: 'Instagram', icon: Instagram },
+      { to: '/social', label: 'Social Accounts', icon: Share2 },
     ],
   },
   {
     title: 'AUTOMATION',
     items: [
       { to: '/automation', label: 'Automation', icon: Zap },
-      { to: '/ai-voice', label: 'AI Voice', icon: Mic },
       { to: '/analytics', label: 'Analytics', icon: BarChart3 },
     ],
   },
@@ -152,7 +146,7 @@ export const NewSidebar: React.FC<SidebarProps> = ({ health, onOpenHistory, mobi
                       <span className={`text-[10px] font-semibold px-2 py-0.2 rounded-full ${
                         item.badgeVariant === 'purple'
                           ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
-                          : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          : 'bg-slate-700 text-slate-300 border border-slate-600'
                       }`}>
                         {item.badge}
                       </span>
@@ -169,19 +163,15 @@ export const NewSidebar: React.FC<SidebarProps> = ({ health, onOpenHistory, mobi
       <div className="p-4 border-t border-white/[0.06] bg-slate-950/40">
         <div className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.06] flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <span className={`relative inline-flex rounded-full h-2 w-2 ${health?.engine_mode === 'backend' ? 'bg-emerald-500' : 'bg-amber-400'}`}>
+            <span className={`relative inline-flex rounded-full h-2 w-2 ${health?.status === 'healthy' ? 'bg-emerald-500' : 'bg-rose-400'}`}>
             </span>
             <div>
               <p className="text-xs font-medium text-white">
-                {!health ? 'Checking Engine' : health.engine_mode === 'openai_direct'
-                  ? 'OpenAI key saved'
-                  : health.engine_mode === 'backend'
-                    ? 'Backend API connected'
-                    : health.engine_mode === 'backend_demo'
-                      ? 'Backend demo engine'
-                      : 'Local demo engine'}
+                {!health ? 'Backend unavailable' : 'Backend connected'}
               </p>
-              <p className="text-[10px] text-slate-500">{health?.openai_model || 'Checking status'}</p>
+              <p className="text-[10px] text-slate-500">
+                {health ? (health.ai_configured ? health.openai_model : 'AI provider not configured') : 'Check backend URL'}
+              </p>
             </div>
           </div>
         </div>

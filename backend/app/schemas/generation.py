@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 
 class PromptParameters(BaseModel):
     temperature: float = Field(0.5, ge=0.0, le=1.0)
@@ -13,6 +13,10 @@ class GenerateRequest(BaseModel):
     tone: str = Field("Professional", description="Tone (Professional, Friendly, Witty, Persuasive, Premium, Casual, Inspirational, Technical)")
     audience: str = Field("General", description="Target Audience")
     objective: str = Field("Product promotion", description="Content Objective")
+    content_type: Literal[
+        "Social post", "Carousel", "Story", "Reel script",
+        "Email newsletter", "Video script", "Ad copy"
+    ] = "Social post"
     additional_instructions: Optional[str] = Field("", description="Optional custom constraints")
     parameters: PromptParameters = Field(default_factory=PromptParameters)
 
@@ -54,12 +58,16 @@ class GenerationResponse(BaseModel):
     tone: str
     audience: str
     objective: str
+    content_type: str = "Social post"
     prompt_parameters: Dict[str, Any]
     compiled_prompt: str
     generated_content: str
+    hook: Optional[str] = None
+    cta: Optional[str] = None
+    hashtags: List[str] = Field(default_factory=list)
+    image_prompt: Optional[str] = None
     formatted_content: FormattedContent
     platform_validation: PlatformValidationResult
-    is_demo_mode: bool = False
     is_saved: bool = False
     created_at: str
 
@@ -71,7 +79,12 @@ class HistoryItemResponse(BaseModel):
     tone: str
     audience: str
     objective: str
+    content_type: str = "Social post"
     generated_content: str
+    hook: Optional[str] = None
+    cta: Optional[str] = None
+    hashtags: List[str] = Field(default_factory=list)
+    image_prompt: Optional[str] = None
     prompt_parameters: Dict[str, Any]
     is_saved: bool
     created_at: str
@@ -94,5 +107,5 @@ class HealthResponse(BaseModel):
     project_name: str
     tagline: str
     version: str
-    demo_mode: bool
     openai_model: str
+    ai_configured: bool

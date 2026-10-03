@@ -12,8 +12,6 @@ export interface WorkspacePreferences {
   defaultTone: ToneType;
   defaultAudience: AudienceType;
   defaultObjective: ObjectiveType;
-  automationEnabled: boolean;
-  postingTime: string;
 }
 
 export const DEFAULT_WORKSPACE_PREFERENCES: WorkspacePreferences = {
@@ -21,8 +19,6 @@ export const DEFAULT_WORKSPACE_PREFERENCES: WorkspacePreferences = {
   defaultTone: 'Professional',
   defaultAudience: 'Professionals',
   defaultObjective: 'Product launch',
-  automationEnabled: false,
-  postingTime: '06:00',
 };
 
 const isOption = <T extends string>(value: unknown, options: T[]): value is T =>
@@ -48,10 +44,6 @@ export const getWorkspacePreferences = (): WorkspacePreferences => {
         ? preferences.defaultAudience : DEFAULT_WORKSPACE_PREFERENCES.defaultAudience,
       defaultObjective: isOption(preferences.defaultObjective, OBJECTIVES)
         ? preferences.defaultObjective : DEFAULT_WORKSPACE_PREFERENCES.defaultObjective,
-      automationEnabled: typeof preferences.automationEnabled === 'boolean'
-        ? preferences.automationEnabled : DEFAULT_WORKSPACE_PREFERENCES.automationEnabled,
-      postingTime: typeof preferences.postingTime === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(preferences.postingTime)
-        ? preferences.postingTime : DEFAULT_WORKSPACE_PREFERENCES.postingTime,
     };
   } catch (error) {
     console.warn('Could not read workspace preferences; using defaults.', error);

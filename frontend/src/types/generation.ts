@@ -2,6 +2,7 @@ export type PlatformType = 'LinkedIn' | 'Instagram' | 'Email' | 'X/Twitter' | 'F
 export type ToneType = 'Professional' | 'Friendly' | 'Witty' | 'Persuasive' | 'Premium' | 'Casual' | 'Inspirational' | 'Technical';
 export type AudienceType = 'General' | 'Students' | 'Developers' | 'Professionals' | 'Business Owners' | 'Custom';
 export type ObjectiveType = 'Product launch' | 'Product promotion' | 'Awareness' | 'Engagement' | 'Announcement' | 'Educational';
+export type ContentType = 'Social post' | 'Carousel' | 'Story' | 'Reel script' | 'Email newsletter' | 'Video script' | 'Ad copy';
 
 export interface PromptParameters {
   temperature: number;
@@ -16,6 +17,7 @@ export interface GenerateRequest {
   tone: ToneType;
   audience: AudienceType | string;
   objective: ObjectiveType;
+  content_type: ContentType;
   additional_instructions?: string;
   parameters: PromptParameters;
 }
@@ -62,12 +64,16 @@ export interface GenerationResponse {
   tone: ToneType;
   audience: string;
   objective: string;
+  content_type: ContentType;
   prompt_parameters: Record<string, any>;
   compiled_prompt: string;
   generated_content: string;
+  hook?: string | null;
+  cta?: string | null;
+  hashtags: string[];
+  image_prompt?: string | null;
   formatted_content: FormattedContent;
   platform_validation: PlatformValidationResult;
-  is_demo_mode: boolean;
   is_saved: boolean;
   created_at: string;
 }
@@ -80,11 +86,15 @@ export interface HistoryItem {
   tone: ToneType;
   audience: string;
   objective: string;
+  content_type: ContentType;
   generated_content: string;
+  hook?: string | null;
+  cta?: string | null;
+  hashtags?: string[];
+  image_prompt?: string | null;
   prompt_parameters: Record<string, any>;
   is_saved: boolean;
   created_at: string;
-  is_demo_mode?: boolean;
 }
 
 export interface TemplateItem {
@@ -106,9 +116,8 @@ export interface HealthStatus {
   project_name: string;
   tagline: string;
   version: string;
-  demo_mode: boolean;
   openai_model: string;
-  engine_mode?: 'local_demo' | 'openai_direct' | 'backend' | 'backend_demo';
+  ai_configured: boolean;
 }
 
 export type PipelineStage = 'idle' | 'brief' | 'prompt_compiling' | 'ai_generating' | 'validating' | 'ready';

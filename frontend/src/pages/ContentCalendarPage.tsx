@@ -1,212 +1,231 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  Calendar as CalendarIcon,
-  Plus,
-  Clock,
-  Send,
-  Eye,
-  CheckCircle2,
-  AlertCircle,
-  Linkedin,
-  Instagram
-} from 'lucide-react';
-import { Button, PlatformBadge, PostStatusBadge, Tabs } from '../components/ui';
-import { PostStatus, ScheduledPost } from '../types/platform';
-import { getScheduledPosts } from '../services/scheduledPosts';
+import React, { FormEvent, useCallback, useEffect, useState } from 'react';
+import { Plus, RefreshCw } from 'lucide-react';
+import { Badge, Button, EmptyState, PlatformBadge } from '../components/ui';
+import { PostCreate, ScheduledPost, createPost, fetchPosts } from '../services/platformApi';
 
-interface CalendarEvent {
-  id: string;
-  day: number;
-  time: string;
-  topic: string;
-  platform: 'linkedin' | 'instagram';
-  status: PostStatus;
-  thumbnail?: string;
-  hook: string;
-  dateLabel?: string;
-}
+const currentTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
 
-const SCHEDULED_ITEMS: CalendarEvent[] = [
-  {
-    id: '1',
-    day: 4,
-    time: '09:00 AM',
-    topic: 'Reasoning Models Scaling Laws',
-    platform: 'linkedin',
-    status: 'scheduled',
-    thumbnail: '/assets/trend_radar_art.jpg',
-    hook: 'Why test-time compute is changing software economics in 2026...',
-  },
-  {
-    id: '2',
-    day: 6,
-    time: '05:30 PM',
-    topic: 'Autonomous Multi-Agent Systems',
-    platform: 'instagram',
-    status: 'awaiting_approval',
-    thumbnail: '/assets/ai_agent_sculpture.jpg',
-    hook: '3 patterns every developer must know before building AI agents 🤖',
-  },
-  {
-    id: '3',
-    day: 9,
-    time: '11:15 AM',
-    topic: 'Spec-Driven Agentic Coding',
-    platform: 'linkedin',
-    status: 'draft',
-    hook: 'The shift from code-writing to spec-authoring: how engineering roles evolve.',
-  },
-  {
-    id: '4',
-    day: 12,
-    time: '02:00 PM',
-    topic: 'CopyForge AI Platform Launch',
-    platform: 'linkedin',
-    status: 'scheduled',
-    thumbnail: '/assets/hero_ai_pulse.jpg',
-    hook: 'Introducing CopyForge AI: Turn product ideas into platform-ready marketing copy.',
-  },
-  {
-    id: '5',
-    day: 15,
-    time: '04:00 PM',
-    topic: 'Local AI & On-Device Small Models',
-    platform: 'instagram',
-    status: 'draft',
-    hook: 'Zero cloud latency: the revolution of on-device quantized models 📱',
-  },
-];
+const statusLabel: Record<ScheduledPost['status'], string> = {
+  draft: 'Draft',
+  awaiting_approval: 'Awaiting Approval',
+  scheduled: 'Scheduled',
+  publishing: 'Publishing',
+  published: 'Published',
+  failed: 'Failed',
+};
 
 export const ContentCalendarPage: React.FC = () => {
-  const navigate = useNavigate();
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const currentMonth = 'October 2026';
-  const [localSchedules] = useState<ScheduledPost[]>(getScheduledPosts);
+  const [posts, setPosts] = useState<ScheduledPost[]>([]);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [loading, setLoading] = useState(true);
+  const [formOpen, setFormOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [topic, setTopic] = useState('');
+  const [content, setContent] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [imagePrompt, setImagePrompt] = useState('');
+  const [platform, setPlatform] = useState<'linkedin' | 'instagram'>('linkedin');
+  const [scheduledAt, setScheduledAt] = useState('');
+  const [timezone, setTimezone] = useState(currentTimezone);
+  const [mode, setMode] = useState<PostCreate['mode']>('approval_required');
 
-  const savedEvents: CalendarEvent[] = localSchedules.map((post) => {
-    const date = new Date(post.scheduledAt);
-    return {
-      id: post.id,
-      day: date.getDate(),
-      time: date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-      topic: post.topic,
-      platform: post.platform,
-      status: post.status,
-      thumbnail: post.imageUrl,
-      hook: post.content,
-      dateLabel: date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }),
-    };
-  });
-  const calendarEvents = [...savedEvents, ...SCHEDULED_ITEMS];
-  const filterTabs = [
-    { id: 'all', label: 'All Events', count: calendarEvents.length },
-    { id: 'scheduled', label: 'Scheduled', count: calendarEvents.filter((event) => event.status === 'scheduled').length },
-    { id: 'awaiting_approval', label: 'In Approval', count: calendarEvents.filter((event) => event.status === 'awaiting_approval').length },
-    { id: 'draft', label: 'Drafts', count: calendarEvents.filter((event) => event.status === 'draft').length },
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      setPosts(await fetchPosts());
+    } catch (requestError) {
+      const detail = (requestError as { response?: { data?: { detail?: string } } })
+        .response?.data?.detail;
+      setError(detail || 'Could not load calendar records from the backend.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      await createPost({
+        topic,
+        description: '',
+        platform,
+        content,
+        image_url: imageUrl.trim() || null,
+        image_prompt: imagePrompt.trim() || null,
+        timezone,
+        mode,
+        scheduled_at: scheduledAt || null,
+      });
+      setTopic('');
+      setContent('');
+      setImageUrl('');
+      setImagePrompt('');
+      setScheduledAt('');
+      setFormOpen(false);
+      setNotice('Post saved to your account calendar.');
+      await load();
+    } catch (requestError) {
+      const detail = (requestError as { response?: { data?: { detail?: string } } })
+        .response?.data?.detail;
+      setError(detail || 'Could not save this post. Please retry.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const filters = [
+    ['all', 'All'],
+    ['draft', 'Draft'],
+    ['awaiting_approval', 'Awaiting Approval'],
+    ['scheduled', 'Scheduled'],
+    ['publishing', 'Publishing'],
+    ['published', 'Published'],
+    ['failed', 'Failed'],
   ];
-
-  const filteredEvents = calendarEvents.filter(e =>
-    selectedStatus === 'all' || e.status === selectedStatus
-  );
+  const visiblePosts = posts.filter((post) => statusFilter === 'all' || post.status === statusFilter);
 
   return (
     <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-8 animate-fade-in">
-      {/* ── Calendar Header ────────────────────────────────────────── */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 border-b border-white/[0.07]">
         <div className="space-y-1.5">
           <span className="text-[11px] font-mono font-bold tracking-widest text-indigo-400 uppercase">
-            PLANNING & EDITORIAL TIMELINE
+            ACCOUNT POSTING SCHEDULE
           </span>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
-            Content Calendar
-          </h1>
+          <h1 className="text-3xl font-extrabold text-white tracking-tight">Content Calendar</h1>
           <p className="text-xs md:text-sm text-slate-400">
-            Example editorial items for the demo. Nothing here is scheduled for external publishing.
+            Calendar items are loaded from your account database. Scheduled jobs execute on the backend.
           </p>
         </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 bg-slate-900/90 border border-white/10 rounded-xl p-1">
-            <span className="text-xs font-bold text-white px-3 font-mono">{currentMonth} · Sample</span>
-          </div>
-
-          <Button
-            variant="primary"
-            size="md"
-            icon={Plus}
-            onClick={() => navigate('/studio')}
-          >
-            Create Draft
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="md" icon={RefreshCw} onClick={() => void load()}>
+            Refresh
+          </Button>
+          <Button variant="primary" size="md" icon={Plus} onClick={() => setFormOpen((open) => !open)}>
+            Schedule Post
           </Button>
         </div>
       </div>
 
-      {/* ── Status Tabs ────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <Tabs
-          tabs={filterTabs}
-          activeTab={selectedStatus}
-          onChange={setSelectedStatus}
-        />
-        <span className="text-xs font-mono text-slate-500">
-          Showing {filteredEvents.length} Items
-        </span>
-      </div>
+      {notice && <p role="status" className="text-sm text-emerald-300">{notice}</p>}
+      {error && (
+        <p role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          {error}
+        </p>
+      )}
 
-      {/* ── Editorial Timeline Grid ────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredEvents.map((item) => (
-          <div
-            key={item.id}
-            className="editorial-card rounded-2xl p-6 border border-white/10 flex flex-col justify-between hover:border-indigo-500/40 transition-all group"
-          >
-            <div className="space-y-4">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-9 h-9 rounded-xl bg-white/[0.04] border border-white/10 flex flex-col items-center justify-center font-mono text-xs">
-                    <span className="text-[9px] text-slate-500 uppercase">{item.dateLabel?.split(' ')[0] || 'OCT'}</span>
-                    <span className="font-bold text-white">{item.dateLabel ? item.dateLabel.split(' ')[1]?.replace(',', '') : item.day < 10 ? `0${item.day}` : item.day}</span>
-                  </div>
-                  <div>
-                    <PlatformBadge platform={item.platform} />
-                    <p className="text-[10px] font-mono text-slate-400 mt-0.5">{item.time}</p>
-                  </div>
-                </div>
-                <PostStatusBadge status={item.status} />
-              </div>
-
-              {item.thumbnail && (
-                <div className="h-32 rounded-xl overflow-hidden border border-white/10 bg-slate-950">
-                  <img src={item.thumbnail} alt={item.topic} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-                </div>
-              )}
-
-              <div>
-                <h4 className="text-base font-bold text-white mb-1.5 group-hover:text-indigo-300 transition-colors">
-                  {item.topic}
-                </h4>
-                <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed italic">
-                  "{item.hook}"
-                </p>
-              </div>
-            </div>
-
-            <div className="pt-4 mt-4 border-t border-white/[0.06] flex items-center justify-between text-xs">
-              <span className="text-slate-500 font-mono text-[11px]">
-                {localSchedules.some((scheduled) => scheduled.id === item.id) ? 'Local reminder · not published' : 'Demo item · not scheduled'}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => navigate('/studio')}
-              >
-                Inspect
-              </Button>
-            </div>
+      {formOpen && (
+        <form onSubmit={submit} className="editorial-card rounded-2xl p-6 border border-white/10 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <h2 className="md:col-span-2 text-sm font-bold text-white">Create a calendar item</h2>
+          <label className="space-y-1.5 text-xs text-slate-300">
+            Topic
+            <input required value={topic} onChange={(event) => setTopic(event.target.value)} className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white" />
+          </label>
+          <label className="space-y-1.5 text-xs text-slate-300">
+            Platform
+            <select value={platform} onChange={(event) => setPlatform(event.target.value as typeof platform)} className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white">
+              <option value="linkedin">LinkedIn</option>
+              <option value="instagram">Instagram</option>
+            </select>
+          </label>
+          <label className="md:col-span-2 space-y-1.5 text-xs text-slate-300">
+            Content
+            <textarea required rows={5} value={content} onChange={(event) => setContent(event.target.value)} className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white" />
+          </label>
+          <label className="md:col-span-2 space-y-1.5 text-xs text-slate-300">
+            Image URL (optional)
+            <input type="url" value={imageUrl} onChange={(event) => setImageUrl(event.target.value)} placeholder="https://..." className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white" />
+          </label>
+          {!imageUrl.trim() && (
+            <label className="md:col-span-2 space-y-1.5 text-xs text-slate-300">
+              Image prompt (optional; used to generate a publishable Instagram image)
+              <textarea rows={3} maxLength={4000} value={imagePrompt} onChange={(event) => setImagePrompt(event.target.value)} className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white" />
+            </label>
+          )}
+          <label className="space-y-1.5 text-xs text-slate-300">
+            Date and time
+            <input type="datetime-local" value={scheduledAt} onChange={(event) => setScheduledAt(event.target.value)} className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white" />
+          </label>
+          <label className="space-y-1.5 text-xs text-slate-300">
+            Timezone (IANA)
+            <input required value={timezone} onChange={(event) => setTimezone(event.target.value)} placeholder="Asia/Kolkata" className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white" />
+          </label>
+          <label className="space-y-1.5 text-xs text-slate-300">
+            Publishing mode
+            <select value={mode} onChange={(event) => setMode(event.target.value as PostCreate['mode'])} className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white">
+              <option value="draft_only">Draft Only</option>
+              <option value="approval_required">Approval Required</option>
+              <option value="auto_publish">Auto Publish</option>
+            </select>
+          </label>
+          <div className="md:col-span-2 flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setFormOpen(false)}>Cancel</Button>
+            <Button type="submit" variant="primary" loading={saving}>Save Post</Button>
           </div>
+        </form>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        {filters.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setStatusFilter(id)}
+            className={`rounded-lg px-3 py-2 text-xs font-medium border ${
+              statusFilter === id
+                ? 'bg-indigo-600/20 text-indigo-200 border-indigo-500/40'
+                : 'bg-slate-900 text-slate-400 border-white/10'
+            }`}
+          >
+            {label}{id === 'all' ? ` (${posts.length})` : ''}
+          </button>
         ))}
       </div>
+
+      {loading ? (
+        <p role="status" className="text-sm text-slate-400">Loading calendar…</p>
+      ) : visiblePosts.length === 0 ? (
+        <EmptyState
+          icon={Plus}
+          title={error ? 'Calendar unavailable' : 'No posts in this view'}
+          description={error || 'Create a draft, request approval, or schedule a post to get started.'}
+          action={<Button variant="primary" onClick={() => setFormOpen(true)}>Create Post</Button>}
+        />
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          {visiblePosts.map((post) => (
+            <article key={post.id} className="editorial-card rounded-2xl p-5 border border-white/10 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <PlatformBadge platform={post.platform} />
+                  <p className="text-[11px] text-slate-500 mt-2">
+                    {post.scheduled_at
+                      ? new Date(post.scheduled_at).toLocaleString(undefined, { timeZone: post.timezone })
+                      : 'No publish time set'}
+                    {' · '}{post.timezone}
+                  </p>
+                </div>
+                <Badge variant={post.status === 'failed' ? 'error' : post.status === 'published' ? 'success' : 'default'}>
+                  {statusLabel[post.status]}
+                </Badge>
+              </div>
+              <h3 className="font-bold text-white">{post.topic || 'Scheduled content'}</h3>
+              <p className="text-xs text-slate-300 whitespace-pre-wrap line-clamp-5">{post.content}</p>
+              {post.last_error && <p role="alert" className="text-xs text-rose-300">{post.last_error}</p>}
+              {post.published_url && <a href={post.published_url} target="_blank" rel="noreferrer" className="text-xs text-indigo-300 underline">Open published post</a>}
+            </article>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

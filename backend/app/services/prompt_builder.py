@@ -37,6 +37,7 @@ class PromptBuilderService:
         tone: str,
         audience: str,
         objective: str,
+        content_type: str = "Social post",
         additional_instructions: str = ""
     ) -> Tuple[str, str]:
         """
@@ -71,10 +72,15 @@ Generate platform-ready marketing copy for the product '{product_name}' tailored
 ### TARGET AUDIENCE:
 {audience}
 
+### CONTENT FORMAT:
+Create a {content_type}, not a generic post. Shape its structure and length for that format.
+
 ### CRITICAL RULES:
-1. Do NOT include conversational preambles like "Here is your content:", "Sure, here's...", or metadata commentary.
-2. Produce ONLY the final marketing content ready for immediate publishing.
-3. Ensure absolute compliance with the structural and length constraints for {platform}.
+1. Return only a valid JSON object with exactly these keys: "content", "hook", "cta", "hashtags", "image_prompt".
+2. "content" is the complete platform-ready copy, including relevant hashtags where appropriate.
+3. "hook" and "cta" are concise strings taken from the generated copy; "hashtags" is an array of hashtag strings.
+4. "image_prompt" is a useful visual-generation prompt consistent with the brief, with no unsupported factual claims.
+5. Do not add markdown fences, preambles, or commentary. Ensure valid JSON and comply with the constraints for {platform}.
 """
 
         user_prompt = f"""### CONTENT BRIEF FOR GENERATION:
@@ -85,6 +91,7 @@ Generate platform-ready marketing copy for the product '{product_name}' tailored
 - **Tone**: {tone}
 - **Target Audience**: {audience}
 - **Content Objective**: {objective}
+- **Content Format**: {content_type}
 """
 
         if additional_instructions and additional_instructions.strip():

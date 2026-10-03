@@ -5,6 +5,7 @@ import {
   AlertTriangle, Mail, Twitter, Instagram, ShieldAlert
 } from 'lucide-react';
 import { GenerationResponse, ToneType, PlatformType } from '../types/generation';
+import { createPost } from '../services/platformApi';
 
 interface ContentEditorProps {
   generation: GenerationResponse | null;
@@ -27,6 +28,9 @@ export const ContentEditor: React.FC<ContentEditorProps> = ({
   const [selectedTone, setSelectedTone] = useState<ToneType>('Professional');
   const [selectedPlatform, setSelectedPlatform] = useState<PlatformType>('LinkedIn');
   const [isSaved, setIsSaved] = useState(generation?.is_saved || false);
+  const [queueBusy, setQueueBusy] = useState(false);
+  const [queueMessage, setQueueMessage] = useState('');
+  const [queueError, setQueueError] = useState('');
 
   React.useEffect(() => {
     if (generation) {
@@ -76,6 +80,37 @@ export const ContentEditor: React.FC<ContentEditorProps> = ({
     onToggleSave(generation.id);
   };
 
+  const addToQueue = async (mode: 'draft_only' | 'approval_required') => {
+    if (!generation || !['LinkedIn', 'Instagram'].includes(generation.platform)) return;
+    setQueueBusy(true);
+    setQueueError('');
+    setQueueMessage('');
+    try {
+      await createPost({
+        topic: generation.product_name,
+        description: generation.product_description,
+        platform: generation.platform.toLowerCase() as 'linkedin' | 'instagram',
+        content: generation.generated_content,
+        tone: generation.tone,
+        audience: generation.audience,
+        content_type: generation.content_type,
+        hook: generation.hook,
+        cta: generation.cta,
+        hashtags: generation.hashtags,
+        image_prompt: generation.image_prompt,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+        mode,
+      });
+      setQueueMessage(mode === 'approval_required' ? 'Added to the approval queue.' : 'Saved as a draft.');
+    } catch (requestError) {
+      const detail = (requestError as { response?: { data?: { detail?: string } } })
+        .response?.data?.detail;
+      setQueueError(detail || 'Could not save this content to your account.');
+    } finally {
+      setQueueBusy(false);
+    }
+  };
+
   const handleShare = () => {
     if (!generation) return;
     if (navigator.share) {
@@ -118,7 +153,7 @@ export const ContentEditor: React.FC<ContentEditorProps> = ({
     );
   }
 
-  const { formatted_content, platform_validation, is_demo_mode } = generation;
+  const { formatted_content, platform_validation } = generation;
   const isEmail = generation.platform === 'Email' && formatted_content.email_data;
   const isTwitter = generation.platform === 'X/Twitter';
   const twitterChars = formatted_content.twitter_char_count || formatted_content.char_count;
@@ -135,11 +170,6 @@ export const ContentEditor: React.FC<ContentEditorProps> = ({
             <span className="px-2.5 py-1 rounded-lg bg-purple-500/20 text-purple-300 font-semibold text-xs border border-purple-500/30">
               {generation.tone} Tone
             </span>
-            {is_demo_mode && (
-              <span className="px-2 py-0.5 rounded bg-amber-400/10 text-amber-400 text-[11px] font-mono border border-amber-400/20 flex items-center gap-1">
-                <ShieldAlert className="w-3 h-3" /> Demo Output
-              </span>
-            )}
           </div>
 
           {/* Quick Action Tools */}
@@ -254,6 +284,29 @@ export const ContentEditor: React.FC<ContentEditorProps> = ({
               {formatted_content.word_count} words | {formatted_content.char_count} chars
             </span>
           </div>
+
+          {['LinkedIn', 'Instagram'].includes(generation.platform) && (
+            <div className="mb-5 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void addToQueue('approval_required')}
+                disabled={queueBusy}
+                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-xs text-white font-semibold"
+              >
+                {queueBusy ? 'Saving…' : 'Send to Approval Queue'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void addToQueue('draft_only')}
+                disabled={queueBusy}
+                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-60 text-xs text-slate-200 border border-slate-700"
+              >
+                Save Draft
+              </button>
+              {queueMessage && <span role="status" className="text-xs text-emerald-300">{queueMessage}</span>}
+              {queueError && <span role="alert" className="text-xs text-rose-300">{queueError}</span>}
+            </div>
+          )}
 
           <div className="flex flex-wrap gap-1.5 pt-1">
             {platform_validation.passed_rules.map((rule, idx) => (

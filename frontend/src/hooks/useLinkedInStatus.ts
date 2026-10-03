@@ -12,6 +12,9 @@ const CALLBACK_MESSAGES: Record<string, string> = {
   connected: 'LinkedIn Connected.',
   cancelled: 'LinkedIn authorization was cancelled.',
   not_configured: 'LinkedIn is not configured on the CopyForge backend.',
+  instagram_connected: 'Instagram Connected.',
+  instagram_not_configured: 'Instagram is not configured. Add META_APP_ID, META_APP_SECRET, and META_REDIRECT_URI to the backend.',
+  instagram_cancelled: 'Instagram authorization was cancelled.',
 };
 
 const FAILURE_MESSAGES: Record<string, string> = {
@@ -73,11 +76,12 @@ export const useLinkedInStatus = (): LinkedInStatusState => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const callbackResult = params.get('linkedin');
+    const instagramResult = params.get('instagram');
     const callbackReason = params.get('reason');
     const fragment = new URLSearchParams(window.location.hash.slice(1));
     const sessionId = fragment.get('session');
     if (sessionId) storeLinkedInSession(sessionId);
-    if (callbackResult || sessionId) {
+    if (callbackResult || instagramResult || sessionId) {
       window.history.replaceState(null, '', window.location.pathname);
     }
     void (async () => {
@@ -86,6 +90,14 @@ export const useLinkedInStatus = (): LinkedInStatusState => {
         setError(FAILURE_MESSAGES[callbackReason || ''] || 'LinkedIn connection failed. Please try again.');
       } else if (callbackResult) {
         setNotice(CALLBACK_MESSAGES[callbackResult] || '');
+      } else if (instagramResult === 'failed') {
+        setError(
+          callbackReason === 'sign_in_required'
+            ? 'Connect LinkedIn to sign in before connecting Instagram.'
+            : 'Instagram could not complete authorization. Please try again.',
+        );
+      } else if (instagramResult) {
+        setNotice(CALLBACK_MESSAGES[`instagram_${instagramResult}`] || '');
       }
     })();
   }, [refresh]);

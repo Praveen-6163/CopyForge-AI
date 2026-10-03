@@ -80,14 +80,14 @@ async def _store_state(state: str, session_hash: str) -> None:
     now = int(time.time())
     async with get_db() as db:
         await db.execute(
-            text("DELETE FROM linkedin_oauth_states WHERE expires_at <= :now"),
+            text("DELETE FROM oauth_states WHERE expires_at <= :now"),
             {"now": now},
         )
         await db.execute(
             text(
                 """
-                INSERT INTO linkedin_oauth_states (state_hash, session_hash, expires_at)
-                VALUES (:state_hash, :session_hash, :expires_at)
+                INSERT INTO oauth_states (provider, state_hash, session_hash, expires_at)
+                VALUES ('linkedin', :state_hash, :session_hash, :expires_at)
                 """
             ),
             {
@@ -105,8 +105,8 @@ async def _consume_state(state: str) -> str | None:
             await db.execute(
                 text(
                     """
-                    DELETE FROM linkedin_oauth_states
-                    WHERE state_hash = :state_hash
+                    DELETE FROM oauth_states
+                    WHERE provider = 'linkedin' AND state_hash = :state_hash
                     RETURNING session_hash, expires_at
                     """
                 ),
@@ -135,6 +135,68 @@ async def _save_connection(
     connected_at = datetime.now(timezone.utc).isoformat()
 
     async with get_db() as db:
+        await db.execute(
+            text(
+                """
+                INSERT INTO users (id, linkedin_member_id, display_name, created_at)
+                VALUES (:user_id, :member_id, :display_name, :created_at)
+                ON CONFLICT(id) DO UPDATE SET
+                    display_name = excluded.display_name
+                """
+            ),
+            {
+                "user_id": member_id,
+                "member_id": member_id,
+                "display_name": display_name,
+                "created_at": connected_at,
+            },
+        )
+        await db.execute(
+            text(
+                """
+                INSERT INTO social_accounts (
+                    user_id, platform, provider_user_id, display_name, profile_image,
+                    access_token_ciphertext, token_expires_at, connected_at
+                ) VALUES (
+                    :user_id, 'linkedin', :provider_user_id, :display_name, :profile_image,
+                    :access_token_ciphertext, :token_expires_at, :connected_at
+                )
+                ON CONFLICT(user_id, platform) DO UPDATE SET
+                    provider_user_id = excluded.provider_user_id,
+                    display_name = excluded.display_name,
+                    profile_image = excluded.profile_image,
+                    access_token_ciphertext = excluded.access_token_ciphertext,
+                    token_expires_at = excluded.token_expires_at,
+                    connected_at = excluded.connected_at
+                """
+            ),
+            {
+                "user_id": member_id,
+                "provider_user_id": member_id,
+                "display_name": display_name,
+                "profile_image": profile_image,
+                "access_token_ciphertext": encrypted_token,
+                "token_expires_at": token_expires_at,
+                "connected_at": connected_at,
+            },
+        )
+        await db.execute(
+            text(
+                """
+                INSERT INTO user_sessions (session_hash, user_id, expires_at, created_at)
+                VALUES (:session_hash, :user_id, :expires_at, :created_at)
+                ON CONFLICT(session_hash) DO UPDATE SET
+                    user_id = excluded.user_id,
+                    expires_at = excluded.expires_at
+                """
+            ),
+            {
+                "session_hash": session_hash,
+                "user_id": member_id,
+                "expires_at": int(time.time() + SESSION_TTL_SECONDS),
+                "created_at": connected_at,
+            },
+        )
         await db.execute(
             text(
                 """
@@ -367,8 +429,24 @@ async def disconnect_linkedin(
     session_id = _request_session_id(request)
     if session_id:
         async with get_db() as db:
+            account = (
+                await db.execute(
+                    text(
+                        "SELECT member_id FROM linkedin_connections WHERE session_hash = :session_hash"
+                    ),
+                    {"session_hash": _hash(session_id)},
+                )
+            ).first()
             await db.execute(
                 text("DELETE FROM linkedin_connections WHERE session_hash = :session_hash"),
                 {"session_hash": _hash(session_id)},
             )
+            if account:
+                await db.execute(
+                    text(
+                        "DELETE FROM social_accounts "
+                        "WHERE user_id = :user_id AND platform = 'linkedin'"
+                    ),
+                    {"user_id": account[0]},
+                )
     return JSONResponse({"disconnected": True})

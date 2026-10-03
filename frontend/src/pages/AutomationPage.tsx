@@ -1,201 +1,192 @@
-import React, { useState } from 'react';
-import {
-  Zap,
-  Radio,
-  Search,
-  PenTool,
-  Image as ImageIcon,
-  ShieldCheck,
-  CheckSquare,
-  Send,
-  BarChart3,
-  Clock,
-  Play,
-  Pause,
-  CheckCircle2,
-  Calendar
-} from 'lucide-react';
-import { Button, Badge, WorkflowStep } from '../components/ui';
-import { getWorkspacePreferences, saveWorkspacePreferences } from '../services/workspacePreferences';
+import React, { FormEvent, useCallback, useEffect, useState } from 'react';
+import { CalendarClock, Clock, Save, Zap } from 'lucide-react';
+import { Button } from '../components/ui';
+import { AutomationSettings, fetchAutomation, saveAutomation } from '../services/platformApi';
+
+const DEFAULTS: AutomationSettings = {
+  enabled: false,
+  platform: 'linkedin',
+  topic: '',
+  description: '',
+  tone: 'Professional',
+  audience: 'Professionals',
+  content_type: 'Social post',
+  frequency: 'daily',
+  posting_time: '06:00',
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+  mode: 'approval_required',
+};
 
 export const AutomationPage: React.FC = () => {
-  const [preferences, setPreferences] = useState(getWorkspacePreferences);
-  const [mode, setMode] = useState<'draft_only' | 'approval_required' | 'auto_publish'>('approval_required');
-  const [saveError, setSaveError] = useState('');
+  const [settings, setSettings] = useState<AutomationSettings>(DEFAULTS);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
-  const updateAutomationPreference = (updates: Partial<typeof preferences>) => {
-    const next = { ...preferences, ...updates };
-    setPreferences(next);
+  const load = useCallback(async () => {
+    setLoading(true);
     try {
-      saveWorkspacePreferences(next);
-      setSaveError('');
-    } catch (error) {
-      console.error('Could not save automation preferences.', error);
-      setSaveError('Could not save this preference. Check browser storage permissions.');
+      setSettings(await fetchAutomation());
+      setError('');
+    } catch (requestError) {
+      const detail = (requestError as { response?: { data?: { detail?: string } } })
+        .response?.data?.detail;
+      setError(detail || 'Could not load automation settings from the backend.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const update = <K extends keyof AutomationSettings>(key: K, value: AutomationSettings[K]) => {
+    setSettings((current) => ({ ...current, [key]: value }));
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSaving(true);
+    setError('');
+    setNotice('');
+    try {
+      const saved = await saveAutomation(settings);
+      setSettings(saved);
+      setNotice(saved.enabled
+        ? `Daily automation is active. Next run: ${saved.next_run_at ? new Date(saved.next_run_at).toLocaleString(undefined, { timeZone: saved.timezone }) : 'pending'}.`
+        : 'Automation settings saved and paused.');
+    } catch (requestError) {
+      const detail = (requestError as { response?: { data?: { detail?: string } } })
+        .response?.data?.detail;
+      setError(detail || 'Could not save automation settings.');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const workflowSteps = [
-    { stepNumber: 1, title: 'DISCOVER', description: 'Semantic clustering of AI trends and tech velocity spikes', status: 'completed' as const, icon: Radio },
-    { stepNumber: 2, title: 'RESEARCH', description: 'Fact retrieval from ArXiv, TechCrunch & GitHub', status: 'completed' as const, icon: Search },
-    { stepNumber: 3, title: 'WRITE', description: 'Dynamic prompt compilation with platform rules & voice', status: 'completed' as const, icon: PenTool },
-    { stepNumber: 4, title: 'DESIGN', description: 'Visual Studio generates 3D asset matching copy narrative', status: 'completed' as const, icon: ImageIcon },
-    { stepNumber: 5, title: 'CHECK', description: '5-point AI quality & hallucination verification', status: 'active' as const, icon: ShieldCheck },
-    { stepNumber: 6, title: 'APPROVE', description: 'Human sign-off routing in Approval Queue', status: 'pending' as const, icon: CheckSquare },
-    { stepNumber: 7, title: 'PUBLISH', description: 'Direct API dispatch to LinkedIn & Instagram', status: 'pending' as const, icon: Send },
-    { stepNumber: 8, title: 'ANALYZE', description: 'Engagement metrics ingestion & feedback loop', status: 'pending' as const, icon: BarChart3 },
-  ];
-
   return (
-    <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-10 animate-fade-in">
-      {/* ── Hero Control Header ────────────────────────────────────── */}
-      {saveError && <p role="alert" className="text-sm text-rose-300">{saveError}</p>}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-6 border-b border-white/[0.07]">
-        <div className="space-y-2">
-          <span className="text-[11px] font-mono font-bold tracking-widest text-indigo-400 uppercase">
-            AUTONOMOUS CONTENT ENGINE
-          </span>
-          <h1 className="text-3xl md:text-5xl font-extrabold text-white tracking-tight">
-            Automation Engine
-          </h1>
-          <p className="text-sm text-slate-400 max-w-xl">
-            Local workflow preview only. No background jobs run and no posts are scheduled or published.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Button
-            variant={preferences.automationEnabled ? 'primary' : 'outline'}
-            size="md"
-            icon={preferences.automationEnabled ? Pause : Play}
-            onClick={() => updateAutomationPreference({ automationEnabled: !preferences.automationEnabled })}
-          >
-            {preferences.automationEnabled ? 'Turn preference off' : 'Turn preference on'}
-          </Button>
-        </div>
+    <div className="p-6 md:p-10 max-w-5xl mx-auto space-y-8 animate-fade-in">
+      <div className="pb-6 border-b border-white/[0.07]">
+        <span className="text-[11px] font-mono font-bold tracking-widest text-indigo-400 uppercase">
+          SERVER-SIDE SCHEDULER
+        </span>
+        <h1 className="text-3xl md:text-4xl font-extrabold text-white tracking-tight mt-2 flex items-center gap-3">
+          <Zap className="w-7 h-7 text-indigo-400" />
+          Automation
+        </h1>
+        <p className="text-sm text-slate-400 mt-2 max-w-2xl">
+          Configure daily content generation and publishing. The backend scheduler runs the job and records each result in PostgreSQL.
+        </p>
       </div>
 
-      {/* ── Execution Status Overview ──────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="editorial-card rounded-2xl p-5 border border-white/10 space-y-1">
-          <p className="text-[10px] font-mono text-slate-500 uppercase">Preview Status</p>
-          <p className="text-xl font-bold text-slate-200 flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${preferences.automationEnabled ? 'bg-amber-400' : 'bg-slate-500'}`} />
-          {preferences.automationEnabled ? 'Preference enabled' : 'Preference off'}
-          </p>
-        </div>
+      {notice && <p role="status" className="text-sm text-emerald-300">{notice}</p>}
+      {error && (
+        <p role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          {error}
+        </p>
+      )}
 
-        <div className="editorial-card rounded-2xl p-5 border border-white/10 space-y-1">
-          <p className="text-[10px] font-mono text-slate-500 uppercase">Execution Schedule</p>
-          <p className="text-xl font-bold text-white flex items-center gap-1.5">
-            <Clock className="w-4 h-4 text-indigo-400" />
-            Preference only
-          </p>
-        </div>
-
-        <div className="editorial-card rounded-2xl p-5 border border-white/10 space-y-1">
-          <p className="text-[10px] font-mono text-slate-500 uppercase">Next Scheduled Run</p>
-          <p className="text-xl font-bold text-indigo-300">
-            {new Date(`2000-01-01T${preferences.postingTime}:00`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
-          </p>
-        </div>
-
-        <div className="editorial-card rounded-2xl p-5 border border-white/10 space-y-1">
-          <p className="text-[10px] font-mono text-slate-500 uppercase">Execution History</p>
-          <p className="text-xl font-bold text-slate-300">No jobs executed</p>
-        </div>
-      </div>
-
-      {/* ── Visual 8-Step Workflow Pipeline ────────────────────────── */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-white uppercase tracking-wider flex items-center gap-2">
-            <Zap className="w-4 h-4 text-indigo-400" />
-            Pipeline Architecture Flow
-          </h3>
-          <span className="text-xs font-mono text-slate-500">8 illustrative stages</span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-          {workflowSteps.map((step) => (
-            <WorkflowStep
-              key={step.stepNumber}
-              stepNumber={step.stepNumber}
-              title={step.title}
-              description={step.description}
-              status={step.status}
-              icon={step.icon}
+      {loading ? (
+        <p role="status" className="text-sm text-slate-400">Loading saved automation settings…</p>
+      ) : (
+        <form onSubmit={submit} className="editorial-card rounded-2xl p-6 md:p-8 border border-white/10 space-y-6">
+          <label className="flex items-center justify-between gap-4 rounded-xl bg-slate-900/60 p-4 border border-white/[0.06]">
+            <span>
+              <span className="block text-sm font-semibold text-white">Enable daily automation</span>
+              <span className="block text-xs text-slate-400 mt-1">Jobs are executed by the backend, not by this browser.</span>
+            </span>
+            <input
+              aria-label="Enable daily automation"
+              type="checkbox"
+              checked={settings.enabled}
+              onChange={(event) => update('enabled', event.target.checked)}
+              className="h-5 w-5 accent-indigo-500"
             />
-          ))}
-        </div>
-      </div>
+          </label>
 
-      {/* ── Mode & Execution Configuration ─────────────────────────── */}
-      <div className="editorial-card rounded-2xl p-6 md:p-8 border border-white/10 space-y-6">
-        <h3 className="text-base font-bold text-white uppercase tracking-wider pb-3 border-b border-white/[0.06]">
-          Autonomous Safety & Publishing Mode
-        </h3>
-        <label className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-300">
-          <span className="flex items-center gap-2"><Clock className="h-4 w-4 text-indigo-400" /> Preferred posting time</span>
-          <input
-            type="time"
-            aria-label="Preferred posting time"
-            value={preferences.postingTime}
-            onChange={(event) => updateAutomationPreference({ postingTime: event.target.value })}
-            className="rounded-lg border border-white/10 bg-slate-900 px-3 py-2 text-white"
-          />
-        </label>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div
-            onClick={() => setMode('draft_only')}
-            className={`p-5 rounded-2xl border cursor-pointer transition-all ${
-              mode === 'draft_only'
-                ? 'bg-indigo-950/30 border-indigo-500'
-                : 'bg-slate-900/60 border-white/[0.06] hover:border-white/20'
-            }`}
-          >
-            <span className="font-mono text-xs font-bold text-indigo-400 block mb-1">MODE 01</span>
-            <h4 className="text-sm font-bold text-white mb-1">Draft Only</h4>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Generates topic research and creates draft briefs in Content Studio without scheduling.
-            </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <label className="space-y-1.5 text-xs text-slate-300">
+              Platform
+              <select value={settings.platform} onChange={(event) => update('platform', event.target.value as AutomationSettings['platform'])} className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white">
+                <option value="linkedin">LinkedIn</option>
+                <option value="instagram">Instagram</option>
+              </select>
+            </label>
+            <label className="space-y-1.5 text-xs text-slate-300">
+              Content type
+              <input value={settings.content_type} onChange={(event) => update('content_type', event.target.value)} required className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white" />
+            </label>
+            <label className="md:col-span-2 space-y-1.5 text-xs text-slate-300">
+              Topic
+              <input value={settings.topic} onChange={(event) => update('topic', event.target.value)} required={settings.enabled} className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white" />
+            </label>
+            <label className="md:col-span-2 space-y-1.5 text-xs text-slate-300">
+              Description / brief
+              <textarea rows={4} value={settings.description} onChange={(event) => update('description', event.target.value)} required={settings.enabled} className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white" />
+            </label>
+            <label className="space-y-1.5 text-xs text-slate-300">
+              Tone
+              <input value={settings.tone} onChange={(event) => update('tone', event.target.value)} required className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white" />
+            </label>
+            <label className="space-y-1.5 text-xs text-slate-300">
+              Audience
+              <input value={settings.audience} onChange={(event) => update('audience', event.target.value)} required className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white" />
+            </label>
           </div>
 
-          <div
-            onClick={() => setMode('approval_required')}
-            className={`p-5 rounded-2xl border cursor-pointer transition-all ${
-              mode === 'approval_required'
-                ? 'bg-indigo-950/30 border-indigo-500 ring-1 ring-indigo-500/50'
-                : 'bg-slate-900/60 border-white/[0.06] hover:border-white/20'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-mono text-xs font-bold text-indigo-400">MODE 02</span>
-              <Badge variant="purple" size="sm">Recommended</Badge>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <label className="space-y-1.5 text-xs text-slate-300">
+              <span className="flex items-center gap-2"><Clock className="w-4 h-4 text-indigo-400" />Run time</span>
+              <input type="time" value={settings.posting_time} onChange={(event) => update('posting_time', event.target.value)} required className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white" />
+            </label>
+            <label className="space-y-1.5 text-xs text-slate-300">
+              Timezone (IANA)
+              <input value={settings.timezone} onChange={(event) => update('timezone', event.target.value)} required placeholder="Asia/Kolkata" className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-white" />
+            </label>
+            <label className="space-y-1.5 text-xs text-slate-300">
+              Frequency
+              <input value="Every day" readOnly className="w-full rounded-xl bg-slate-900 border border-white/10 px-3 py-2.5 text-slate-400" />
+            </label>
+          </div>
+
+          <fieldset className="space-y-3">
+            <legend className="text-sm font-bold text-white">Publishing mode</legend>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {([
+                ['auto_publish', 'Auto Publish', 'Publish through the connected platform API.'],
+                ['approval_required', 'Approval Required', 'Create a post in the approval queue.'],
+                ['draft_only', 'Draft Only', 'Save generated content as a draft.'],
+              ] as const).map(([value, label, description]) => (
+                <label key={value} className={`p-4 rounded-xl border cursor-pointer ${
+                  settings.mode === value ? 'border-indigo-500 bg-indigo-950/30' : 'border-white/10 bg-slate-900/50'
+                }`}>
+                  <input type="radio" name="mode" value={value} checked={settings.mode === value} onChange={() => update('mode', value)} className="sr-only" />
+                  <span className="block text-xs font-bold text-white">{label}</span>
+                  <span className="block text-[11px] text-slate-400 mt-1">{description}</span>
+                </label>
+              ))}
             </div>
-            <h4 className="text-sm font-bold text-white mb-1">Approval Required</h4>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              AI writes copy and generates visuals, then routes to Approval Queue for human sign-off before publishing.
-            </p>
+          </fieldset>
+
+          <div className="rounded-xl border border-white/10 bg-slate-900/60 p-4 text-xs text-slate-400">
+            {settings.next_run_at
+              ? <span className="flex items-center gap-2"><CalendarClock className="w-4 h-4 text-indigo-400" /> Next run: {new Date(settings.next_run_at).toLocaleString(undefined, { timeZone: settings.timezone })} ({settings.timezone})</span>
+              : 'Automation is paused until you save it as enabled.'}
+            {settings.last_run_at && (
+              <p className="mt-2">Last run: {new Date(settings.last_run_at).toLocaleString()}</p>
+            )}
+            {settings.last_run_error && (
+              <p role="alert" className="mt-2 text-rose-300">Last run failed: {settings.last_run_error}</p>
+            )}
           </div>
 
-          <div
-            onClick={() => setMode('auto_publish')}
-            className={`p-5 rounded-2xl border cursor-pointer transition-all ${
-              mode === 'auto_publish'
-                ? 'bg-indigo-950/30 border-indigo-500'
-                : 'bg-slate-900/60 border-white/[0.06] hover:border-white/20'
-            }`}
-          >
-            <span className="font-mono text-xs font-bold text-indigo-400 block mb-1">MODE 03</span>
-            <h4 className="text-sm font-bold text-white mb-1">Autonomous Auto-Publish</h4>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Display-only mode selector. Auto-publishing requires social OAuth and a backend worker, neither of which is configured.
-            </p>
+          <div className="flex justify-end">
+            <Button type="submit" variant="primary" icon={Save} loading={saving}>Save Automation</Button>
           </div>
-        </div>
-      </div>
+        </form>
+      )}
     </div>
   );
 };

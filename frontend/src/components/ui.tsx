@@ -146,6 +146,7 @@ export const PostStatusBadge: React.FC<{ status: PostStatus }> = ({ status }) =>
     draft:            { label: 'Draft',             variant: 'default' },
     awaiting_approval:{ label: 'Review Required',   variant: 'warning' },
     scheduled:        { label: 'Scheduled',         variant: 'info' },
+    publishing:       { label: 'Publishing',        variant: 'info' },
     published:        { label: 'Published',         variant: 'success' },
     failed:           { label: 'Failed',            variant: 'error' },
   };
@@ -408,7 +409,7 @@ export const TrendCard: React.FC<TrendCardProps> = ({
 
 // ─── ContentPreview ──────────────────────────────────────────────────────────
 export interface ContentPreviewProps {
-  platform: SocialPlatform;
+  platform: string;
   content: string;
   authorName?: string;
   authorTitle?: string;
@@ -419,25 +420,23 @@ export interface ContentPreviewProps {
 export const ContentPreview: React.FC<ContentPreviewProps> = ({
   platform,
   content,
-  authorName = 'Alex Mercer',
-  authorTitle = 'AI Strategist & Growth Architect',
+  authorName,
+  authorTitle,
   mediaUrl,
-  hashtags = ['#AI', '#TechTrends', '#GenerativeAI']
+  hashtags = []
 }) => {
+  const socialPlatform = platform.toLowerCase();
+  const isSocialPlatform = socialPlatform === 'linkedin' || socialPlatform === 'instagram';
   return (
     <div className="rounded-2xl bg-slate-900/90 border border-white/10 overflow-hidden shadow-2xl">
-      {/* Platform Header */}
       <div className="px-5 py-3.5 border-b border-white/[0.08] flex items-center justify-between bg-slate-950/60">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white font-bold text-xs">
-            {authorName.charAt(0)}
-          </div>
-          <div>
-            <p className="text-xs font-bold text-white">{authorName}</p>
-            <p className="text-[10px] text-slate-400">{authorTitle}</p>
-          </div>
+        <div>
+          <p className="text-xs font-bold text-white">{authorName || 'Content preview'}</p>
+          {authorTitle && <p className="text-[10px] text-slate-400">{authorTitle}</p>}
         </div>
-        <PlatformBadge platform={platform} />
+        {isSocialPlatform
+          ? <PlatformBadge platform={socialPlatform as SocialPlatform} />
+          : <span className="text-xs text-slate-300">{platform}</span>}
       </div>
 
       {/* Post Content */}
@@ -452,19 +451,13 @@ export const ContentPreview: React.FC<ContentPreviewProps> = ({
         </div>
       )}
 
-      {/* Hashtags & Actions */}
-      <div className="px-5 py-3.5 bg-slate-950/40 border-t border-white/[0.06] flex items-center justify-between text-xs text-slate-400">
-        <div className="flex items-center gap-2 flex-wrap">
-          {hashtags.map((h, i) => (
-            <span key={i} className="text-indigo-400 text-xs hover:underline cursor-pointer">{h}</span>
+      {hashtags.length > 0 && (
+        <div className="px-5 py-3.5 bg-slate-950/40 border-t border-white/[0.06] flex items-center gap-2 flex-wrap">
+          {hashtags.map((hashtag) => (
+            <span key={hashtag} className="text-indigo-400 text-xs">{hashtag}</span>
           ))}
         </div>
-        <div className="flex items-center gap-4 text-slate-500">
-          <span className="flex items-center gap-1"><Eye className="w-3.5 h-3.5" /> 1.4k</span>
-          <span className="flex items-center gap-1"><MessageSquare className="w-3.5 h-3.5" /> 28</span>
-          <span className="flex items-center gap-1"><Share2 className="w-3.5 h-3.5" /> 12</span>
-        </div>
-      </div>
+      )}
     </div>
   );
 };

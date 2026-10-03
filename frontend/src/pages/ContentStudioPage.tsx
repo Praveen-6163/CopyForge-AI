@@ -6,7 +6,6 @@ import {
   SlidersHorizontal,
   Bookmark,
   Share2,
-  CheckCircle2,
   Calendar,
   Layers,
   Send,
@@ -17,13 +16,15 @@ import {
   Wand2,
   MessageSquare
 } from 'lucide-react';
+import { createPost } from '../services/platformApi';
 import {
   GenerateRequest,
   GenerationResponse,
   PipelineStage,
   ToneType,
   PlatformType,
-  ObjectiveType
+  ObjectiveType,
+  ContentType
 } from '../types/generation';
 import { Button, Badge, Card, Input, Select, ContentPreview } from '../components/ui';
 
@@ -56,10 +57,11 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
   onViewCompiledPrompt,
   onResetForm,
 }) => {
-  const [activePreviewPlatform, setActivePreviewPlatform] = useState<'linkedin' | 'instagram'>('linkedin');
   const [showAdvancedParams, setShowAdvancedParams] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [approvalSent, setApprovalSent] = useState(false);
+  const [postActionBusy, setPostActionBusy] = useState(false);
+  const [postActionNotice, setPostActionNotice] = useState('');
+  const [postActionError, setPostActionError] = useState('');
 
   const handleCopy = () => {
     if (!generation?.generated_content) return;
@@ -68,9 +70,47 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleSendApproval = () => {
-    setApprovalSent(true);
-    setTimeout(() => setApprovalSent(false), 3000);
+  const handleSavePost = async (mode: 'draft_only' | 'approval_required') => {
+    if (!generation) return;
+    const platform = generation.platform === 'LinkedIn'
+      ? 'linkedin'
+      : generation.platform === 'Instagram'
+        ? 'instagram'
+        : null;
+    if (!platform) {
+      setPostActionError('Drafts and approvals are currently supported for LinkedIn and Instagram content.');
+      return;
+    }
+
+    setPostActionBusy(true);
+    setPostActionNotice('');
+    setPostActionError('');
+    try {
+      await createPost({
+        topic: generation.product_name,
+        description: generation.product_description,
+        platform,
+        content: generation.generated_content,
+        tone: generation.tone,
+        audience: generation.audience,
+        content_type: generation.content_type,
+        hook: generation.hook,
+        cta: generation.cta,
+        hashtags: generation.hashtags,
+        image_prompt: generation.image_prompt,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+        mode,
+      });
+      setPostActionNotice(mode === 'draft_only'
+        ? 'Draft saved to your Content Calendar.'
+        : 'Content added to your Approval Queue.');
+    } catch (requestError) {
+      const detail = (requestError as { response?: { data?: { detail?: string } } })
+        .response?.data?.detail;
+      setPostActionError(detail || 'Could not save this content to the backend.');
+    } finally {
+      setPostActionBusy(false);
+    }
   };
 
   return (
@@ -165,8 +205,6 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
                   onChange={(e) => {
                     const val = e.target.value as PlatformType;
                     setFormData({ ...formData, platform: val });
-                    if (val === 'Instagram') setActivePreviewPlatform('instagram');
-                    else setActivePreviewPlatform('linkedin');
                   }}
                   className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                 >
@@ -232,6 +270,21 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
                   <option value="Educational">Educational</option>
                 </select>
               </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                Content Type
+              </label>
+              <select
+                value={formData.content_type}
+                onChange={(e) => setFormData({ ...formData, content_type: e.target.value as ContentType })}
+                className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+              >
+                {['Social post', 'Carousel', 'Story', 'Reel script', 'Email newsletter', 'Video script', 'Ad copy'].map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
             </div>
 
             {/* Keywords / Instructions */}
@@ -320,66 +373,48 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
                   Live Platform Preview
                 </h3>
                 {generation && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-mono text-emerald-400">
-                    <CheckCircle2 className="w-3 h-3" />
-                    <span>AI Quality: 96/100</span>
-                  </div>
+                  <span className={`text-[11px] font-mono ${generation.platform_validation.is_valid ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {generation.platform_validation.is_valid ? 'Platform checks passed' : 'Review platform warnings'}
+                  </span>
                 )}
               </div>
 
-              {/* Platform Switcher */}
-              <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-white/[0.07]">
-                <button
-                  onClick={() => setActivePreviewPlatform('linkedin')}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                    activePreviewPlatform === 'linkedin'
-                      ? 'bg-blue-600 text-white font-semibold'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  LinkedIn
-                </button>
-                <button
-                  onClick={() => setActivePreviewPlatform('instagram')}
-                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
-                    activePreviewPlatform === 'instagram'
-                      ? 'bg-pink-600 text-white font-semibold'
-                      : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  Instagram
-                </button>
-              </div>
             </div>
 
             {/* Generated Social Card Preview */}
             {generation?.generated_content ? (
               <div className="space-y-4">
                 <ContentPreview
-                  platform={activePreviewPlatform}
+                  platform={generation.platform}
                   content={generation.generated_content}
-                  authorName="Praveen Medida"
-                  authorTitle="Founder & AI Architect @ CopyForge"
-                  mediaUrl={activePreviewPlatform === 'instagram' ? '/assets/hero_ai_pulse.jpg' : undefined}
+                  hashtags={generation.hashtags}
                 />
 
-                {/* AI Quality Breakdown Pills */}
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06] text-center">
-                    <p className="text-[10px] font-mono text-slate-400 uppercase">Hook Strength</p>
-                    <p className="text-sm font-bold text-emerald-400">98% Exceptional</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06]">
+                    <p className="text-[10px] font-mono text-slate-400 uppercase">Generated Hook</p>
+                    <p className="text-xs text-white mt-1">{generation.hook || 'Not provided by the AI provider.'}</p>
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06] text-center">
-                    <p className="text-[10px] font-mono text-slate-400 uppercase">Virality Metric</p>
-                    <p className="text-sm font-bold text-indigo-400">High Conversion</p>
+                  <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06]">
+                    <p className="text-[10px] font-mono text-slate-400 uppercase">Call to Action</p>
+                    <p className="text-xs text-white mt-1">{generation.cta || 'Not provided by the AI provider.'}</p>
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06] text-center">
-                    <p className="text-[10px] font-mono text-slate-400 uppercase">Word Count</p>
-                    <p className="text-sm font-bold text-white">
-                      {generation.formatted_content?.word_count || generation.generated_content.split(' ').length} words
+                  <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06]">
+                    <p className="text-[10px] font-mono text-slate-400 uppercase">Image Prompt</p>
+                    <p className="text-xs text-white mt-1">{generation.image_prompt || 'Not provided by the AI provider.'}</p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06]">
+                    <p className="text-[10px] font-mono text-slate-400 uppercase">Length</p>
+                    <p className="text-xs text-white mt-1">
+                      {generation.formatted_content?.word_count ?? generation.generated_content.split(/\s+/).filter(Boolean).length} words
                     </p>
                   </div>
                 </div>
+                {generation.platform_validation.warnings.length > 0 && (
+                  <ul className="rounded-xl border border-amber-500/20 bg-amber-950/20 p-3 text-xs text-amber-200 space-y-1">
+                    {generation.platform_validation.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                  </ul>
+                )}
 
                 {/* Refinement Actions Toolbar */}
                 <div className="p-4 rounded-xl bg-slate-950/60 border border-white/[0.06] space-y-3">
@@ -405,8 +440,7 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
                   </div>
                 </div>
 
-                {/* Workflow Actions (Save, Approve, Schedule) */}
-                <div className="flex items-center justify-between pt-2 border-t border-white/[0.06]">
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-white/[0.06]">
                   <div className="flex items-center gap-2">
                     <Button
                       variant={generation.is_saved ? 'primary' : 'outline'}
@@ -414,7 +448,7 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
                       icon={Bookmark}
                       onClick={() => onToggleSave(generation.id)}
                     >
-                      {generation.is_saved ? 'Saved' : 'Save Draft'}
+                      {generation.is_saved ? 'Bookmarked' : 'Bookmark'}
                     </Button>
                     <Button variant="outline" size="sm" icon={Share2} onClick={handleCopy}>
                       {copied ? 'Copied!' : 'Copy Text'}
@@ -423,15 +457,27 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
 
                   <div className="flex items-center gap-2">
                     <Button
+                      variant="secondary"
+                      size="sm"
+                      icon={Calendar}
+                      loading={postActionBusy}
+                      onClick={() => void handleSavePost('draft_only')}
+                    >
+                      Save Draft
+                    </Button>
+                    <Button
                       variant="primary"
                       size="sm"
                       icon={CheckSquare}
-                      onClick={handleSendApproval}
+                      loading={postActionBusy}
+                      onClick={() => void handleSavePost('approval_required')}
                     >
-                      {approvalSent ? 'Queued for Approval!' : 'Send for Approval'}
+                      Send for Approval
                     </Button>
                   </div>
                 </div>
+                {postActionNotice && <p role="status" className="text-xs text-emerald-300">{postActionNotice}</p>}
+                {postActionError && <p role="alert" className="text-xs text-rose-300">{postActionError}</p>}
               </div>
             ) : (
               <div className="py-16 text-center space-y-4">

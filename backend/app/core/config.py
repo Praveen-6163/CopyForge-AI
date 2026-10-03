@@ -17,6 +17,16 @@ class Settings:
     @property
     def OPENAI_MODEL(self) -> str:
         return os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
+
+    @property
+    def OPENAI_IMAGE_MODEL(self) -> str:
+        return os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1").strip()
+
+    @property
+    def AI_CONFIGURED(self) -> bool:
+        return bool(self.OPENAI_API_KEY) and not self.OPENAI_API_KEY.lower().startswith(
+            ("your_", "placeholder")
+        )
     
     @property
     def DB_PATH(self) -> str:
@@ -47,6 +57,43 @@ class Settings:
         return os.getenv("LINKEDIN_REDIRECT_URI", "").strip()
 
     @property
+    def LINKEDIN_API_VERSION(self) -> str:
+        return os.getenv("LINKEDIN_API_VERSION", "202510").strip()
+
+    @property
+    def META_APP_ID(self) -> str:
+        return os.getenv("META_APP_ID", "").strip()
+
+    @property
+    def META_APP_SECRET(self) -> str:
+        return os.getenv("META_APP_SECRET", "").strip()
+
+    @property
+    def META_REDIRECT_URI(self) -> str:
+        return os.getenv("META_REDIRECT_URI", "").strip()
+
+    @property
+    def META_GRAPH_API_VERSION(self) -> str:
+        return os.getenv("META_GRAPH_API_VERSION", "v22.0").strip()
+
+    @property
+    def META_CONFIGURED(self) -> bool:
+        try:
+            redirect = urlparse(self.META_REDIRECT_URI)
+            return (
+                bool(self.META_APP_ID and self.META_APP_SECRET)
+                and redirect.scheme == "https"
+                and bool(redirect.hostname)
+                and redirect.path == "/auth/instagram/callback"
+                and not redirect.query
+                and not redirect.fragment
+                and not redirect.username
+                and not redirect.password
+            )
+        except ValueError:
+            return False
+
+    @property
     def FRONTEND_URL(self) -> str:
         return os.getenv(
             "FRONTEND_URL",
@@ -56,6 +103,16 @@ class Settings:
     @property
     def FRONTEND_ORIGIN(self) -> str:
         return self.FRONTEND_URL
+
+    @property
+    def PUBLIC_BACKEND_URL(self) -> str:
+        configured_url = os.getenv("PUBLIC_BACKEND_URL", "").strip().rstrip("/")
+        if configured_url:
+            return configured_url
+        redirect = urlparse(self.LINKEDIN_REDIRECT_URI)
+        if redirect.scheme and redirect.netloc:
+            return f"{redirect.scheme}://{redirect.netloc}"
+        return "http://localhost:8000"
 
     @property
     def CORS_ALLOWED_ORIGINS(self) -> list[str]:
@@ -125,9 +182,4 @@ class Settings:
     def LINKEDIN_COOKIE_SECURE(self) -> bool:
         return self.LINKEDIN_REDIRECT_URI.lower().startswith("https://")
     
-    @property
-    def is_demo_mode(self) -> bool:
-        key = self.OPENAI_API_KEY
-        return len(key) == 0 or key.startswith("your_") or "sk-demo" in key or "placeholder" in key
-
 settings = Settings()

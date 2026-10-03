@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { Menu, Sparkles } from 'lucide-react';
 
 // ─── Existing components (preserved) ─────────────────────────────────────────
@@ -24,7 +24,6 @@ import { PublishedPostsPage }  from './pages/PublishedPostsPage';
 import { AnalyticsPage }       from './pages/AnalyticsPage';
 import { SocialAccountPage }   from './pages/SocialAccountPage';
 import { AutomationPage }      from './pages/AutomationPage';
-import { AIVoicePage }         from './pages/AIVoicePage';
 import { SettingsPage }        from './pages/SettingsPage';
 
 // ─── Types & Services ─────────────────────────────────────────────────────────
@@ -44,6 +43,7 @@ const DEFAULT_FORM: GenerateRequest = {
   tone: 'Professional',
   audience: 'Professionals',
   objective: 'Product launch',
+  content_type: 'Social post',
   additional_instructions: 'Focus on high-speed campaign creation and platform-specific structure.',
   parameters: { temperature: 0.5, top_p: 0.9, max_tokens: 750 },
 };
@@ -60,12 +60,7 @@ const getDefaultForm = (): GenerateRequest => {
 };
 
 export const App: React.FC = () => {
-  const navigate = useNavigate();
   const [health, setHealth] = useState<HealthStatus | null>(null);
-  const [dashboardContent, setDashboardContent] = useState<{
-    linkedin: GenerationResponse | null;
-    instagram: GenerationResponse | null;
-  }>({ linkedin: null, instagram: null });
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   // ─── Modals/Drawers (existing) ──────────────────────────────────────────────
@@ -90,11 +85,9 @@ export const App: React.FC = () => {
     setIsLoading(true);
     setPipelineStage('prompt_compiling');
     try {
-      await new Promise((r) => setTimeout(r, 200));
       setPipelineStage('ai_generating');
       const result = await generateCopy(formData);
       setPipelineStage('validating');
-      await new Promise((r) => setTimeout(r, 200));
       setGenerationOutput(result);
       setPipelineStage('ready');
     } catch (e: any) {
@@ -104,43 +97,6 @@ export const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleDashboardGenerate = async () => {
-    setIsLoading(true);
-    setPipelineStage('prompt_compiling');
-    try {
-      setPipelineStage('ai_generating');
-      const [linkedin, instagram] = await Promise.all([
-        generateCopy({ ...formData, platform: 'LinkedIn' }),
-        generateCopy({ ...formData, platform: 'Instagram' }),
-      ]);
-      setDashboardContent({ linkedin, instagram });
-      setGenerationOutput(linkedin);
-      setFormData((current) => ({ ...current, platform: 'LinkedIn' }));
-      setPipelineStage('ready');
-    } catch (error) {
-      console.error('Dashboard content generation failed.', error);
-      alert('Could not generate content. Check the AI settings and try again.');
-      setPipelineStage('idle');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleEditDashboardContent = (item: GenerationResponse) => {
-    setGenerationOutput(item);
-    setFormData((current) => ({
-      ...current,
-      product_name: item.product_name,
-      product_description: item.product_description,
-      platform: item.platform,
-      tone: item.tone,
-      audience: item.audience,
-      objective: item.objective as GenerateRequest['objective'],
-    }));
-    setPipelineStage('ready');
-    navigate('/studio');
   };
 
   const handleRefine = async (
@@ -185,6 +141,7 @@ export const App: React.FC = () => {
       product_description: item.product_description,
       platform: item.platform, tone: item.tone,
       audience: item.audience, objective: item.objective as any,
+      content_type: item.content_type,
       additional_instructions: '',
       parameters: {
         temperature: item.prompt_parameters.temperature || 0.5,
@@ -199,12 +156,17 @@ export const App: React.FC = () => {
       product_description: item.product_description,
       platform: item.platform, tone: item.tone,
       audience: item.audience, objective: item.objective,
+      content_type: item.content_type,
       prompt_parameters: item.prompt_parameters,
       compiled_prompt: 'Reopened from history.',
       generated_content: item.generated_content,
+      hook: item.hook || null,
+      cta: item.cta || null,
+      hashtags: item.hashtags || [],
+      image_prompt: item.image_prompt || null,
       formatted_content: { raw_text: item.generated_content, word_count: words, char_count: chars },
       platform_validation: { is_valid: true, passed_rules: ['Loaded from history'], warnings: [], platform_constraints: {} },
-      is_demo_mode: item.is_demo_mode ?? false, is_saved: item.is_saved, created_at: item.created_at,
+      is_saved: item.is_saved, created_at: item.created_at,
     });
     setPipelineStage('ready');
   };
@@ -215,6 +177,7 @@ export const App: React.FC = () => {
       product_description: tpl.product_description_placeholder,
       platform: tpl.platform, tone: tpl.tone,
       audience: tpl.audience, objective: tpl.objective,
+      content_type: 'Social post',
       additional_instructions: tpl.additional_instructions,
       parameters: formData.parameters,
     });
@@ -299,11 +262,6 @@ export const App: React.FC = () => {
         <AppShell>
           <DashboardPage
             health={health}
-            generation={generationOutput}
-            dashboardContent={dashboardContent}
-            isGenerating={isLoading}
-            onGenerate={handleDashboardGenerate}
-            onEditContent={handleEditDashboardContent}
             onOpenHistory={(savedOnly) => {
               setSavedOnlyMode(savedOnly);
               setIsHistoryOpen(true);
@@ -355,24 +313,18 @@ export const App: React.FC = () => {
         <AppShell><AnalyticsPage /></AppShell>
       } />
 
-      <Route path="/social/linkedin" element={
-        <AppShell><SocialAccountPage platform="linkedin" /></AppShell>
+      <Route path="/social" element={
+        <AppShell><SocialAccountPage /></AppShell>
       } />
-
-      <Route path="/social/instagram" element={
-        <AppShell><SocialAccountPage platform="instagram" /></AppShell>
-      } />
+      <Route path="/social/linkedin" element={<Navigate to="/social" replace />} />
+      <Route path="/social/instagram" element={<Navigate to="/social" replace />} />
 
       <Route path="/automation" element={
         <AppShell><AutomationPage /></AppShell>
       } />
 
-      <Route path="/ai-voice" element={
-        <AppShell><AIVoicePage /></AppShell>
-      } />
-
       <Route path="/settings" element={
-        <AppShell><SettingsPage /></AppShell>
+        <AppShell><SettingsPage health={health} /></AppShell>
       } />
 
       {/* Fallback */}
