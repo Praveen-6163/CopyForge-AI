@@ -15,7 +15,13 @@ import {
   Eye,
   CheckSquare,
   Wand2,
-  MessageSquare
+  MessageSquare,
+  Linkedin,
+  Instagram,
+  Hash,
+  ExternalLink,
+  Info,
+  CheckCircle2,
 } from 'lucide-react';
 import { createPost, TrendItem } from '../services/platformApi';
 import {
@@ -25,7 +31,7 @@ import {
   ToneType,
   PlatformType,
   ObjectiveType,
-  ContentType
+  ContentType,
 } from '../types/generation';
 import { Button, Badge, Card, Input, Select, ContentPreview } from '../components/ui';
 
@@ -35,7 +41,7 @@ interface ContentStudioProps {
   generation: GenerationResponse | null;
   isLoading: boolean;
   pipelineStage: PipelineStage;
-  onGenerate: () => void;
+  onGenerate: (overrideForm?: GenerateRequest) => void;
   onRefine: (action: any, newTone?: ToneType, newPlatform?: PlatformType) => void;
   onRegenerate: () => void;
   onToggleSave: (id: string) => void;
@@ -64,21 +70,34 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
   const [postActionBusy, setPostActionBusy] = useState(false);
   const [postActionNotice, setPostActionNotice] = useState('');
   const [postActionError, setPostActionError] = useState('');
+  const [activeTrendSource, setActiveTrendSource] = useState<{ name: string; url?: string } | null>(null);
 
   useEffect(() => {
-    const trendState = location.state as { trend?: TrendItem; targetPlatform?: PlatformType } | null;
-    if (trendState?.trend) {
-      const trend = trendState.trend;
-      const sourceName = trend.sourceName || trend.source || 'Web Source';
+    const state = location.state as { trend?: TrendItem; targetPlatform?: PlatformType } | null;
+    if (state?.trend) {
+      const trend = state.trend;
+      const title = trend.title || '';
+      const summary = trend.summary || '';
+      const whyItMatters = trend.whyItMatters ? `\n\nWhy It Matters:\n${trend.whyItMatters}` : '';
+      const sourceName = trend.sourceName || trend.source || 'Verified Web Source';
       const sourceUrl = trend.sourceUrl || trend.source_url || '';
-      const whyItMatters = trend.whyItMatters ? `\n\nWhy it matters: ${trend.whyItMatters}` : '';
       const sourceCitation = sourceUrl ? `\n\nSource: ${sourceName} (${sourceUrl})` : `\n\nSource: ${sourceName}`;
+
+      setActiveTrendSource({ name: sourceName, url: sourceUrl || undefined });
+
+      const targetPlatform = (state.targetPlatform || 'LinkedIn') as PlatformType;
+
       setFormData((prev) => ({
         ...prev,
-        product_name: trend.title,
-        product_description: `${trend.summary}${whyItMatters}${sourceCitation}`,
-        platform: (trendState.targetPlatform || prev.platform || 'LinkedIn') as PlatformType,
-        additional_instructions: `Highlight key insights from this ${trend.category || 'AI'} trend. Source: ${sourceName}.`,
+        product_name: title,
+        product_description: `${summary}${whyItMatters}${sourceCitation}`.trim(),
+        platform: targetPlatform,
+        tone: 'Professional',
+        audience: 'Professionals',
+        objective: 'Product promotion',
+        content_type: 'Social post',
+        additional_instructions: `Cover this recent ${trend.category || 'AI'} announcement accurately. Source: ${sourceName}. Highlight key takeaways.`,
+        parameters: prev.parameters || { temperature: 0.5, top_p: 0.9, max_tokens: 750 },
       }));
     }
   }, [location.state, setFormData]);
@@ -90,13 +109,27 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleQuickGenerate = (platform: PlatformType, contentType: ContentType = 'Social post', extraInstructions = '') => {
+    const updatedForm: GenerateRequest = {
+      ...formData,
+      platform,
+      content_type: contentType,
+      additional_instructions: extraInstructions || formData.additional_instructions || '',
+      parameters: formData.parameters || { temperature: 0.5, top_p: 0.9, max_tokens: 750 },
+    };
+    setFormData(updatedForm);
+    onGenerate(updatedForm);
+  };
+
   const handleSavePost = async (mode: 'draft_only' | 'approval_required') => {
     if (!generation) return;
-    const platform = generation.platform === 'LinkedIn'
-      ? 'linkedin'
-      : generation.platform === 'Instagram'
+    const platform =
+      generation.platform === 'LinkedIn'
+        ? 'linkedin'
+        : generation.platform === 'Instagram'
         ? 'instagram'
         : null;
+
     if (!platform) {
       setPostActionError('Drafts and approvals are currently supported for LinkedIn and Instagram content.');
       return;
@@ -116,51 +149,68 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
         content_type: generation.content_type,
         hook: generation.hook,
         cta: generation.cta,
-        hashtags: generation.hashtags,
+        hashtags: generation.hashtags || [],
         image_prompt: generation.image_prompt,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
         mode,
       });
-      setPostActionNotice(mode === 'draft_only'
-        ? 'Draft saved to your Content Calendar.'
-        : 'Content added to your Approval Queue.');
-    } catch (requestError) {
-      const detail = (requestError as { response?: { data?: { detail?: string } } })
-        .response?.data?.detail;
+      setPostActionNotice(
+        mode === 'draft_only'
+          ? 'Draft saved to your Content Calendar.'
+          : 'Content added to your Approval Queue.'
+      );
+    } catch (requestError: any) {
+      const detail = requestError?.response?.data?.detail;
       setPostActionError(detail || 'Could not save this content to the backend.');
     } finally {
       setPostActionBusy(false);
     }
   };
 
+  const currentDescLength = (formData?.product_description || '').length;
+  const currentTemp = formData?.parameters?.temperature ?? 0.5;
+  const currentTopP = formData?.parameters?.top_p ?? 0.9;
+
   return (
     <div className="p-6 md:p-10 max-w-7xl mx-auto space-y-8 animate-fade-in">
       {/* ── Studio Header ──────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 border-b border-white/[0.07]">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 border-b border-white/[0.08]">
         <div className="space-y-1.5">
-          <span className="text-[11px] font-mono font-bold tracking-widest text-indigo-400 uppercase">
-            STUDIO WORKSPACE
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-mono font-bold tracking-widest text-indigo-400 uppercase">
+              STUDIO WORKSPACE
+            </span>
+            {activeTrendSource && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/15 text-indigo-300 border border-indigo-500/25">
+                <Sparkles className="w-3 h-3 text-indigo-400" />
+                Drafted from Trend: {activeTrendSource.name}
+              </span>
+            )}
+          </div>
           <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-3">
             Content Studio
             {pipelineStage === 'ai_generating' && (
-              <Badge variant="purple" dot>AI Generating</Badge>
+              <Badge variant="purple" dot>
+                AI Generating
+              </Badge>
             )}
             {pipelineStage === 'ready' && (
-              <Badge variant="success" dot>Draft Ready</Badge>
+              <Badge variant="success" dot>
+                Draft Ready
+              </Badge>
             )}
           </h1>
           <p className="text-xs md:text-sm text-slate-400">
-            Compile structured prompt directives into platform-optimized marketing content and social releases.
+            Transform ideas and trending AI discoveries into platform-ready, high-converting copy using Google Gemini.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <Button variant="ghost" size="sm" onClick={onResetForm}>
             Reset Brief
           </Button>
           <Button variant="secondary" size="sm" icon={Layers} onClick={onOpenTemplates}>
-            Formulas & Templates
+            Templates
           </Button>
           <Button variant="outline" size="sm" icon={Sliders} onClick={onViewCompiledPrompt}>
             Inspect Prompt
@@ -172,13 +222,58 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         {/* ── LEFT: Content Brief Form ────────────────────────────── */}
         <div className="lg:col-span-5 space-y-6">
-          <div className="editorial-card rounded-2xl p-6 border border-white/10 space-y-5">
+          <div className="editorial-card rounded-2xl p-6 border border-white/10 space-y-5 bg-gradient-to-b from-slate-900/90 to-slate-950/90 shadow-xl">
             <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
               <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
                 <PenTool className="w-4 h-4 text-indigo-400" />
                 Content Brief
               </h3>
-              <span className="text-[10px] font-mono text-slate-500">Structured Directives</span>
+              <span className="text-[10px] font-mono text-slate-500">Gemini Powered</span>
+            </div>
+
+            {/* Quick Generator Buttons */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-mono font-semibold text-slate-400 uppercase tracking-wider">
+                Quick Action Generators
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() => handleQuickGenerate('LinkedIn', 'Social post')}
+                  className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-900/90 hover:bg-indigo-950/40 border border-white/10 hover:border-indigo-500/40 text-slate-200 hover:text-white transition-all group disabled:opacity-50"
+                  title="Generate LinkedIn Post"
+                >
+                  <Linkedin className="w-4 h-4 text-indigo-400 group-hover:scale-110 transition-transform mb-1" />
+                  <span className="text-[10px] font-bold">LinkedIn</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() => handleQuickGenerate('Instagram', 'Social post')}
+                  className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-900/90 hover:bg-pink-950/40 border border-white/10 hover:border-pink-500/40 text-slate-200 hover:text-white transition-all group disabled:opacity-50"
+                  title="Generate Instagram Caption"
+                >
+                  <Instagram className="w-4 h-4 text-pink-400 group-hover:scale-110 transition-transform mb-1" />
+                  <span className="text-[10px] font-bold">Instagram</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isLoading}
+                  onClick={() =>
+                    handleQuickGenerate(
+                      formData.platform || 'LinkedIn',
+                      'Social post',
+                      'Generate an optimized list of 15-20 trending, viral hashtags with high discovery value.'
+                    )
+                  }
+                  className="flex flex-col items-center justify-center p-2.5 rounded-xl bg-slate-900/90 hover:bg-emerald-950/40 border border-white/10 hover:border-emerald-500/40 text-slate-200 hover:text-white transition-all group disabled:opacity-50"
+                  title="Generate Viral Hashtags"
+                >
+                  <Hash className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform mb-1" />
+                  <span className="text-[10px] font-bold">Hashtags</span>
+                </button>
+              </div>
             </div>
 
             {/* Product / Topic */}
@@ -188,10 +283,10 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
               </label>
               <input
                 type="text"
-                value={formData.product_name}
+                value={formData?.product_name || ''}
                 onChange={(e) => setFormData({ ...formData, product_name: e.target.value })}
-                placeholder="e.g. CopyForge AI or Autonomous AI Agents"
-                className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                placeholder="e.g. CopyForge AI or Autonomous Agent Breakthrough"
+                className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
               />
             </div>
 
@@ -199,18 +294,18 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
-                  Description & Key Value *
+                  Description & Context *
                 </label>
                 <span className="text-[10px] font-mono text-slate-500">
-                  {formData.product_description.length} / 3000
+                  {currentDescLength} / 3000
                 </span>
               </div>
               <textarea
-                rows={4}
-                value={formData.product_description}
+                rows={5}
+                value={formData?.product_description || ''}
                 onChange={(e) => setFormData({ ...formData, product_description: e.target.value })}
-                placeholder="Detail core insights, metrics, benefits, or announcement angles..."
-                className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 leading-relaxed resize-none"
+                placeholder="Detail the core value, facts, key findings, or announcement angle..."
+                className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:outline-none focus:border-indigo-500 leading-relaxed resize-none transition-colors"
               />
             </div>
 
@@ -221,7 +316,7 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
                   Target Platform
                 </label>
                 <select
-                  value={formData.platform}
+                  value={formData?.platform || 'LinkedIn'}
                   onChange={(e) => {
                     const val = e.target.value as PlatformType;
                     setFormData({ ...formData, platform: val });
@@ -242,7 +337,7 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
                   Tone Directive
                 </label>
                 <select
-                  value={formData.tone}
+                  value={formData?.tone || 'Professional'}
                   onChange={(e) => setFormData({ ...formData, tone: e.target.value as ToneType })}
                   className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                 >
@@ -266,9 +361,9 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
                 </label>
                 <input
                   type="text"
-                  value={formData.audience}
+                  value={formData?.audience || 'General'}
                   onChange={(e) => setFormData({ ...formData, audience: e.target.value })}
-                  placeholder="e.g. Founders, AI Engineers"
+                  placeholder="e.g. Founders, Developers, Students"
                   className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
@@ -278,7 +373,7 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
                   Content Objective
                 </label>
                 <select
-                  value={formData.objective}
+                  value={formData?.objective || 'Product promotion'}
                   onChange={(e) => setFormData({ ...formData, objective: e.target.value as ObjectiveType })}
                   className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
                 >
@@ -297,12 +392,22 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
                 Content Type
               </label>
               <select
-                value={formData.content_type}
+                value={formData?.content_type || 'Social post'}
                 onChange={(e) => setFormData({ ...formData, content_type: e.target.value as ContentType })}
                 className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
               >
-                {['Social post', 'Carousel', 'Story', 'Reel script', 'Email newsletter', 'Video script', 'Ad copy'].map((type) => (
-                  <option key={type} value={type}>{type}</option>
+                {[
+                  'Social post',
+                  'Carousel',
+                  'Story',
+                  'Reel script',
+                  'Email newsletter',
+                  'Video script',
+                  'Ad copy',
+                ].map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
                 ))}
               </select>
             </div>
@@ -310,18 +415,18 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
             {/* Keywords / Instructions */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
-                Keywords & Special Instructions
+                Custom Instructions
               </label>
               <input
                 type="text"
-                value={formData.additional_instructions || ''}
+                value={formData?.additional_instructions || ''}
                 onChange={(e) => setFormData({ ...formData, additional_instructions: e.target.value })}
-                placeholder="e.g. Include 3 bullet takeaways, avoid buzzwords"
+                placeholder="e.g. Include 3 bullet points, add call to action"
                 className="w-full bg-slate-900/90 border border-white/10 rounded-xl px-4 py-2 text-xs text-white focus:outline-none focus:border-indigo-500"
               />
             </div>
 
-            {/* Parameter Sliders Toggle */}
+            {/* Parameter Tuning Toggle */}
             <div className="pt-2">
               <button
                 type="button"
@@ -329,7 +434,11 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
                 className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1.5 font-medium"
               >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>{showAdvancedParams ? 'Hide Parameter Tuning' : 'Advanced Parameters (Temperature & Top-P)'}</span>
+                <span>
+                  {showAdvancedParams
+                    ? 'Hide Parameter Tuning'
+                    : 'Advanced Parameters (Temperature & Top-P)'}
+                </span>
               </button>
 
               {showAdvancedParams && (
@@ -337,15 +446,23 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
                   <div>
                     <div className="flex justify-between text-slate-300 mb-1">
                       <span>Temperature (Creativity)</span>
-                      <span className="font-mono text-indigo-400">{formData.parameters.temperature}</span>
+                      <span className="font-mono text-indigo-400">{currentTemp}</span>
                     </div>
                     <input
-                      type="range" min="0.0" max="1.0" step="0.05"
-                      value={formData.parameters.temperature}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        parameters: { ...formData.parameters, temperature: parseFloat(e.target.value) }
-                      })}
+                      type="range"
+                      min="0.0"
+                      max="1.0"
+                      step="0.05"
+                      value={currentTemp}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          parameters: {
+                            ...(formData.parameters || { top_p: 0.9, max_tokens: 750 }),
+                            temperature: parseFloat(e.target.value),
+                          },
+                        })
+                      }
                       className="w-full accent-indigo-500"
                     />
                   </div>
@@ -353,15 +470,23 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
                   <div>
                     <div className="flex justify-between text-slate-300 mb-1">
                       <span>Top-P (Nucleus Sampling)</span>
-                      <span className="font-mono text-indigo-400">{formData.parameters.top_p}</span>
+                      <span className="font-mono text-indigo-400">{currentTopP}</span>
                     </div>
                     <input
-                      type="range" min="0.0" max="1.0" step="0.05"
-                      value={formData.parameters.top_p}
-                      onChange={(e) => setFormData({
-                        ...formData,
-                        parameters: { ...formData.parameters, top_p: parseFloat(e.target.value) }
-                      })}
+                      type="range"
+                      min="0.0"
+                      max="1.0"
+                      step="0.05"
+                      value={currentTopP}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          parameters: {
+                            ...(formData.parameters || { temperature: 0.5, max_tokens: 750 }),
+                            top_p: parseFloat(e.target.value),
+                          },
+                        })
+                      }
                       className="w-full accent-indigo-500"
                     />
                   </div>
@@ -369,14 +494,14 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
               )}
             </div>
 
-            {/* Generate Trigger */}
+            {/* Primary Generate Trigger */}
             <Button
               variant="primary"
               size="lg"
-              className="w-full !py-3 font-bold"
+              className="w-full !py-3 font-bold bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-600/20"
               icon={Sparkles}
               loading={isLoading}
-              onClick={onGenerate}
+              onClick={() => onGenerate()}
             >
               {isLoading ? 'Compiling & Generating...' : 'Generate Platform Copy'}
             </Button>
@@ -385,82 +510,115 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
 
         {/* ── RIGHT: Interactive Content Preview ───────────────────── */}
         <div className="lg:col-span-7 space-y-6">
-          <div className="editorial-card rounded-2xl p-6 border border-white/10 space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
-              <div className="flex items-center gap-3">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                  <Eye className="w-4 h-4 text-indigo-400" />
-                  Live Platform Preview
-                </h3>
-                {generation && (
-                  <span className={`text-[11px] font-mono ${generation.platform_validation.is_valid ? 'text-emerald-400' : 'text-amber-400'}`}>
-                    {generation.platform_validation.is_valid ? 'Platform checks passed' : 'Review platform warnings'}
-                  </span>
-                )}
+          <div className="editorial-card rounded-2xl p-6 border border-white/10 space-y-5 bg-gradient-to-b from-slate-900/90 to-slate-950/90 shadow-xl min-h-[500px] flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between pb-3 border-b border-white/[0.06]">
+                <div className="flex items-center gap-3">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <Eye className="w-4 h-4 text-indigo-400" />
+                    Live Platform Preview
+                  </h3>
+                  {generation && (
+                    <span
+                      className={`text-[11px] font-mono ${
+                        generation.platform_validation?.is_valid ? 'text-emerald-400' : 'text-amber-400'
+                      }`}
+                    >
+                      {generation.platform_validation?.is_valid
+                        ? 'Platform checks passed'
+                        : 'Review platform warnings'}
+                    </span>
+                  )}
+                </div>
               </div>
 
-            </div>
+              {/* Generated Social Card Preview */}
+              {generation?.generated_content ? (
+                <div className="space-y-4 pt-3">
+                  <ContentPreview
+                    platform={generation.platform}
+                    content={generation.generated_content}
+                    hashtags={generation.hashtags || []}
+                  />
 
-            {/* Generated Social Card Preview */}
-            {generation?.generated_content ? (
-              <div className="space-y-4">
-                <ContentPreview
-                  platform={generation.platform}
-                  content={generation.generated_content}
-                  hashtags={generation.hashtags}
-                />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06]">
+                      <p className="text-[10px] font-mono text-slate-400 uppercase font-semibold">Generated Hook</p>
+                      <p className="text-xs text-white mt-1 leading-relaxed">{generation.hook || 'Included in post body.'}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06]">
+                      <p className="text-[10px] font-mono text-slate-400 uppercase font-semibold">Call to Action</p>
+                      <p className="text-xs text-white mt-1 leading-relaxed">{generation.cta || 'Included in post body.'}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06]">
+                      <p className="text-[10px] font-mono text-slate-400 uppercase font-semibold">Visual Image Prompt</p>
+                      <p className="text-xs text-white mt-1 leading-relaxed">{generation.image_prompt || 'Ready for generation.'}</p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06]">
+                      <p className="text-[10px] font-mono text-slate-400 uppercase font-semibold">Content Metrics</p>
+                      <p className="text-xs text-white mt-1">
+                        {generation.formatted_content?.word_count ??
+                          generation.generated_content.split(/\s+/).filter(Boolean).length}{' '}
+                        words • {(generation.hashtags || []).length} hashtags
+                      </p>
+                    </div>
+                  </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06]">
-                    <p className="text-[10px] font-mono text-slate-400 uppercase">Generated Hook</p>
-                    <p className="text-xs text-white mt-1">{generation.hook || 'Not provided by the AI provider.'}</p>
+                  {generation.platform_validation?.warnings &&
+                    generation.platform_validation.warnings.length > 0 && (
+                      <ul className="rounded-xl border border-amber-500/20 bg-amber-950/20 p-3 text-xs text-amber-200 space-y-1">
+                        {generation.platform_validation.warnings.map((warning) => (
+                          <li key={warning}>• {warning}</li>
+                        ))}
+                      </ul>
+                    )}
+
+                  {/* Refinement Actions Toolbar */}
+                  <div className="p-4 rounded-xl bg-slate-950/60 border border-white/[0.06] space-y-3">
+                    <p className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                      AI Refinement Controls
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="secondary" size="sm" onClick={() => onRefine('make_shorter')}>
+                        Make Shorter
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={() => onRefine('make_longer')}>
+                        Make Longer
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={() => onRefine('enhance_persuasion')}>
+                        Make Persuasive
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={() => onRefine('change_tone', 'Casual')}>
+                        More Conversational
+                      </Button>
+                      <Button variant="secondary" size="sm" onClick={onRegenerate}>
+                        Regenerate
+                      </Button>
+                    </div>
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06]">
-                    <p className="text-[10px] font-mono text-slate-400 uppercase">Call to Action</p>
-                    <p className="text-xs text-white mt-1">{generation.cta || 'Not provided by the AI provider.'}</p>
+                </div>
+              ) : (
+                <div className="py-20 text-center space-y-4">
+                  <div className="w-16 h-16 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-center mx-auto text-indigo-400 shadow-inner">
+                    <Wand2 className="w-8 h-8" />
                   </div>
-                  <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06]">
-                    <p className="text-[10px] font-mono text-slate-400 uppercase">Image Prompt</p>
-                    <p className="text-xs text-white mt-1">{generation.image_prompt || 'Not provided by the AI provider.'}</p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-900/60 border border-white/[0.06]">
-                    <p className="text-[10px] font-mono text-slate-400 uppercase">Length</p>
-                    <p className="text-xs text-white mt-1">
-                      {generation.formatted_content?.word_count ?? generation.generated_content.split(/\s+/).filter(Boolean).length} words
+                  <div className="space-y-1.5 max-w-sm mx-auto">
+                    <h4 className="text-base font-bold text-white">Ready for Generation</h4>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Your brief is configured. Click{' '}
+                      <strong className="text-indigo-300">Generate Platform Copy</strong> or use one of the
+                      quick buttons on the left to compile AI content.
                     </p>
                   </div>
                 </div>
-                {generation.platform_validation.warnings.length > 0 && (
-                  <ul className="rounded-xl border border-amber-500/20 bg-amber-950/20 p-3 text-xs text-amber-200 space-y-1">
-                    {generation.platform_validation.warnings.map((warning) => <li key={warning}>{warning}</li>)}
-                  </ul>
-                )}
+              )}
+            </div>
 
-                {/* Refinement Actions Toolbar */}
-                <div className="p-4 rounded-xl bg-slate-950/60 border border-white/[0.06] space-y-3">
-                  <p className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                    ✦ AI Refinement Controls
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Button variant="secondary" size="sm" onClick={() => onRefine('make_shorter')}>
-                      Make Shorter
-                    </Button>
-                    <Button variant="secondary" size="sm" onClick={() => onRefine('make_longer')}>
-                      Make Longer
-                    </Button>
-                    <Button variant="secondary" size="sm" onClick={() => onRefine('enhance_persuasion')}>
-                      Make Human & Persuasive
-                    </Button>
-                    <Button variant="secondary" size="sm" onClick={() => onRefine('change_tone', 'Casual')}>
-                      More Conversational
-                    </Button>
-                    <Button variant="secondary" size="sm" onClick={onRegenerate}>
-                      Regenerate
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-white/[0.06]">
+            {/* Footer Save & Publish Controls */}
+            {generation?.generated_content && (
+              <div className="space-y-3 pt-4 border-t border-white/[0.06]">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <Button
                       variant={generation.is_saved ? 'primary' : 'outline'}
@@ -491,25 +649,25 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
                       icon={CheckSquare}
                       loading={postActionBusy}
                       onClick={() => void handleSavePost('approval_required')}
+                      className="bg-indigo-600 hover:bg-indigo-500"
                     >
                       Send for Approval
                     </Button>
                   </div>
                 </div>
-                {postActionNotice && <p role="status" className="text-xs text-emerald-300">{postActionNotice}</p>}
-                {postActionError && <p role="alert" className="text-xs text-rose-300">{postActionError}</p>}
-              </div>
-            ) : (
-              <div className="py-16 text-center space-y-4">
-                <div className="w-16 h-16 rounded-2xl bg-white/[0.03] border border-white/10 flex items-center justify-center mx-auto text-slate-500">
-                  <Wand2 className="w-8 h-8" />
-                </div>
-                <div className="space-y-1">
-                  <h4 className="text-base font-bold text-white">No Content Generated Yet</h4>
-                  <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                    Fill in your product topic and directives on the left, then click <strong>Generate Platform Copy</strong>.
+
+                {postActionNotice && (
+                  <p role="status" className="text-xs text-emerald-300 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {postActionNotice}
                   </p>
-                </div>
+                )}
+                {postActionError && (
+                  <p role="alert" className="text-xs text-rose-300 flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5" />
+                    {postActionError}
+                  </p>
+                )}
               </div>
             )}
           </div>
