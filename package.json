@@ -1,0 +1,11 @@
+{
+  "name": "copyforge-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CopyForge AI — AI Content Intelligence & Social Automation Platform",
+  "scripts": {
+    "build": "npm --prefix frontend install && npm --prefix frontend run build",
+    "dev": "npm --prefix frontend run dev",
+    "start": "npm --prefix frontend run preview"
+  }
+}
