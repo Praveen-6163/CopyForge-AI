@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import logging
 import sqlite3
 from urllib.parse import parse_qs, urlparse
 
@@ -9,6 +10,7 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from app.api import linkedin
+from app.core.config import settings
 from app.main import app
 
 
@@ -17,7 +19,7 @@ def oauth_client(tmp_path, monkeypatch):
     monkeypatch.setenv("DB_PATH", str(tmp_path / "oauth-test.db"))
     monkeypatch.setenv("LINKEDIN_CLIENT_ID", "test-client-id")
     monkeypatch.setenv("LINKEDIN_CLIENT_SECRET", "test-client-secret")
-    monkeypatch.setenv("LINKEDIN_REDIRECT_URI", "http://localhost:5000/auth/linkedin/callback")
+    monkeypatch.setenv("LINKEDIN_REDIRECT_URI", "http://localhost:8000/auth/linkedin/callback")
     monkeypatch.setenv("SECRET_KEY", "test-secret-key-that-is-long-enough-32")
     monkeypatch.setenv("FRONTEND_ORIGIN", "http://localhost:3000")
     with TestClient(app) as client:
@@ -31,7 +33,7 @@ def _authorization_state(client: TestClient) -> tuple[str, dict[str, list[str]]]
     query = parse_qs(urlparse(location).query)
     assert urlparse(location).hostname == "www.linkedin.com"
     assert set(query["scope"][0].split()) == {"openid", "profile", "w_member_social"}
-    assert query["redirect_uri"] == ["http://localhost:5000/auth/linkedin/callback"]
+    assert query["redirect_uri"] == ["http://localhost:8000/auth/linkedin/callback"]
     return query["state"][0], query
 
 
@@ -67,6 +69,47 @@ def test_status_says_not_configured_when_credentials_are_missing(oauth_client, m
     response = oauth_client.get("/api/social/linkedin/status")
     assert response.status_code == 200
     assert response.json() == {"configured": False, "connected": False}
+
+
+def test_configuration_validation_names_missing_variables_without_secret_values(monkeypatch):
+    monkeypatch.setenv("LINKEDIN_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("LINKEDIN_CLIENT_SECRET", "sensitive-test-secret-value")
+    monkeypatch.setenv("LINKEDIN_REDIRECT_URI", "http://localhost:8000/auth/linkedin/callback")
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+
+    issues = settings.LINKEDIN_CONFIGURATION_ISSUES
+
+    assert issues == ("SECRET_KEY",)
+    assert "sensitive-test-secret-value" not in repr(issues)
+
+
+def test_configuration_validation_rejects_weak_secret_and_wrong_callback(monkeypatch):
+    monkeypatch.setenv("LINKEDIN_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("LINKEDIN_CLIENT_SECRET", "sensitive-test-secret-value")
+    monkeypatch.setenv("LINKEDIN_REDIRECT_URI", "http://localhost:8000/wrong-path")
+    monkeypatch.setenv("SECRET_KEY", "too-short")
+
+    issues = settings.LINKEDIN_CONFIGURATION_ISSUES
+
+    assert "SECRET_KEY (must be at least 32 characters)" in issues
+    assert any(issue.startswith("LINKEDIN_REDIRECT_URI") for issue in issues)
+    assert "sensitive-test-secret-value" not in repr(issues)
+
+
+def test_startup_warns_about_missing_oauth_variables_without_logging_values(monkeypatch, tmp_path, caplog):
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "startup-test.db"))
+    monkeypatch.setenv("LINKEDIN_CLIENT_ID", "test-client-id")
+    monkeypatch.setenv("LINKEDIN_CLIENT_SECRET", "sensitive-test-secret-value")
+    monkeypatch.setenv("LINKEDIN_REDIRECT_URI", "http://localhost:8000/auth/linkedin/callback")
+    monkeypatch.setenv("FRONTEND_ORIGIN", "http://localhost:3000")
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+
+    with caplog.at_level(logging.WARNING), TestClient(app):
+        pass
+
+    assert "LinkedIn OAuth is disabled" in caplog.text
+    assert "SECRET_KEY" in caplog.text
+    assert "sensitive-test-secret-value" not in caplog.text
 
 
 def test_authorization_redirect_uses_official_linkedin_oauth(oauth_client):

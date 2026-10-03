@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlparse
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -53,6 +54,45 @@ class Settings:
             self.LINKEDIN_REDIRECT_URI,
             self.SECRET_KEY,
         )) and len(self.SECRET_KEY) >= 32
+
+    @property
+    def LINKEDIN_CONFIGURATION_ISSUES(self) -> tuple[str, ...]:
+        required = {
+            "LINKEDIN_CLIENT_ID": self.LINKEDIN_CLIENT_ID,
+            "LINKEDIN_CLIENT_SECRET": self.LINKEDIN_CLIENT_SECRET,
+            "LINKEDIN_REDIRECT_URI": self.LINKEDIN_REDIRECT_URI,
+            "SECRET_KEY": self.SECRET_KEY,
+        }
+        issues = [name for name, value in required.items() if not value]
+
+        if self.SECRET_KEY and len(self.SECRET_KEY) < 32:
+            issues.append("SECRET_KEY (must be at least 32 characters)")
+
+        if self.LINKEDIN_REDIRECT_URI:
+            try:
+                redirect = urlparse(self.LINKEDIN_REDIRECT_URI)
+                hostname = redirect.hostname
+                port = redirect.port
+                valid_redirect = (
+                    redirect.scheme in {"http", "https"}
+                    and bool(hostname)
+                    and (redirect.scheme == "https" or hostname in {"localhost", "127.0.0.1"})
+                    and (port is None or 1 <= port <= 65535)
+                    and redirect.path == "/auth/linkedin/callback"
+                    and not redirect.query
+                    and not redirect.username
+                    and not redirect.password
+                    and not redirect.fragment
+                )
+            except ValueError:
+                valid_redirect = False
+            if not valid_redirect:
+                issues.append(
+                    "LINKEDIN_REDIRECT_URI (must use HTTPS, or localhost HTTP, "
+                    "and end with /auth/linkedin/callback)"
+                )
+
+        return tuple(issues)
 
     @property
     def LINKEDIN_COOKIE_SECURE(self) -> bool:

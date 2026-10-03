@@ -17,6 +17,14 @@ async def lifespan(app: FastAPI):
     # Startup actions
     await init_db()
     logging.info(f"Started {settings.PROJECT_NAME} backend v{settings.VERSION}")
+    linkedin_issues = settings.LINKEDIN_CONFIGURATION_ISSUES
+    if linkedin_issues:
+        logging.warning(
+            "LinkedIn OAuth is disabled. Set or fix these environment variables: %s",
+            ", ".join(linkedin_issues),
+        )
+    else:
+        logging.info("LinkedIn OAuth is configured for callback %s", settings.LINKEDIN_REDIRECT_URI)
     if settings.is_demo_mode:
         logging.info("--> OPENAI_API_KEY not found or default. Running in DEMO MODE.")
     else:
