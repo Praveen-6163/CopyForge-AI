@@ -1,6 +1,6 @@
 [build]
-  command = "npm --prefix frontend install && npm --prefix frontend run build"
-  publish = "frontend/dist"
+  command = "node build.js"
+  publish = "dist"
 
 [build.environment]
   NODE_VERSION = "20"
