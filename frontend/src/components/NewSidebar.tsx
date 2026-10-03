@@ -96,9 +96,11 @@ export const NewSidebar: React.FC<SidebarProps> = ({ health, onOpenHistory, mobi
       {/* ── Brand Logo ────────────────────────────────────────────── */}
       <div className="p-6 pb-5 border-b border-white/[0.06] flex items-center justify-between">
         <NavLink to="/" onClick={onClose} className="flex items-center gap-3 group">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-indigo-600/30 group-hover:scale-105 transition-transform">
-            <Sparkles className="w-4 h-4" />
-          </div>
+          <img
+            src="/icon.png"
+            alt="CopyForge AI Logo"
+            className="w-10 h-10 rounded-xl object-cover border border-indigo-500/30 shadow-md shadow-indigo-600/30 group-hover:scale-105 transition-transform"
+          />
           <div>
             <span className="font-display font-extrabold text-base text-white tracking-tight flex items-center gap-1">
               CopyForge<span className="text-indigo-400">.</span>

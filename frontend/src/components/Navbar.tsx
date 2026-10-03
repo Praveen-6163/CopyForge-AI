@@ -10,6 +10,11 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ health, onOpenSettings }) => (
   <header className="h-16 border-b border-white/[0.07] bg-[#0d1117]/80 backdrop-blur-xl sticky top-0 z-20 px-6 flex items-center justify-between">
     <div className="flex items-center gap-3">
+      <img
+        src="/icon.png"
+        alt="CopyForge"
+        className="w-7 h-7 rounded-lg object-cover border border-white/10 md:hidden"
+      />
       <span className={`h-2 w-2 rounded-full ${health?.status === 'healthy' ? 'bg-emerald-500' : 'bg-rose-400'}`} />
       <span className="text-xs font-mono font-semibold text-slate-400 uppercase tracking-wider">
         CopyForge Workspace
