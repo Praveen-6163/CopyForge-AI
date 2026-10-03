@@ -202,7 +202,13 @@ async def init_db() -> None:
             source TEXT NOT NULL,
             source_url TEXT NOT NULL UNIQUE,
             published_at TEXT,
-            retrieved_at TEXT NOT NULL
+            retrieved_at TEXT NOT NULL,
+            category TEXT DEFAULT 'AI',
+            importance TEXT DEFAULT 'High',
+            why_it_matters TEXT DEFAULT '',
+            source_title TEXT,
+            tags_json TEXT DEFAULT '[]',
+            freshness TEXT DEFAULT 'Recent'
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_trend_items_retrieved ON trend_items(retrieved_at)",
@@ -309,6 +315,24 @@ async def init_db() -> None:
             if column_name not in automation_columns:
                 await connection.execute(
                     text(f"ALTER TABLE automation_settings ADD COLUMN {column_name} TEXT")
+                )
+        trend_columns = await connection.run_sync(
+            lambda sync_connection: {
+                column["name"]
+                for column in inspect(sync_connection).get_columns("trend_items")
+            }
+        )
+        for column_name, definition in (
+            ("category", "TEXT DEFAULT 'AI'"),
+            ("importance", "TEXT DEFAULT 'High'"),
+            ("why_it_matters", "TEXT DEFAULT ''"),
+            ("source_title", "TEXT"),
+            ("tags_json", "TEXT DEFAULT '[]'"),
+            ("freshness", "TEXT DEFAULT 'Recent'"),
+        ):
+            if column_name not in trend_columns:
+                await connection.execute(
+                    text(f"ALTER TABLE trend_items ADD COLUMN {column_name} {definition}")
                 )
         await connection.execute(
             text("CREATE INDEX IF NOT EXISTS idx_history_user_created ON history(user_id, created_at)")

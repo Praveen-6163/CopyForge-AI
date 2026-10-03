@@ -48,7 +48,18 @@ class TrendItemResponse(BaseModel):
     id: str
     title: str
     summary: str
-    source: str
-    source_url: str
-    published_at: str | None
-    retrieved_at: str
+    category: str = "AI"
+    importance: Literal["High", "Medium", "Low"] = "High"
+    whyItMatters: str = ""
+    publishedAt: str | None = None
+    retrievedAt: str
+    sourceName: str
+    sourceUrl: str
+    sourceTitle: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    freshness: Literal["Today", "Yesterday", "Recent"] = "Recent"
+    # Backwards compatibility fields:
+    source: str | None = None
+    source_url: str | None = None
+    published_at: str | None = None
+    retrieved_at: str | None = None

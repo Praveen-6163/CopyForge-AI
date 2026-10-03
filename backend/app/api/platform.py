@@ -505,10 +505,12 @@ async def get_trends(refresh: bool = Query(False)):
     try:
         return await trend_service.list_trends(refresh=refresh)
     except RuntimeError as error:
-        raise HTTPException(status_code=502, detail=str(error)) from error
+        msg = str(error)
+        status_code = 503 if "not configured" in msg.lower() else (429 if "limit" in msg.lower() else 502)
+        raise HTTPException(status_code=status_code, detail=msg) from error
     except Exception as error:
         logger.exception("Could not load trend items.")
-        raise HTTPException(status_code=502, detail="Trend sources are temporarily unavailable.") from error
+        raise HTTPException(status_code=502, detail="Live web search is temporarily unavailable. Please try again.") from error
 
 
 @router.post("/trends/refresh")
@@ -517,10 +519,12 @@ async def refresh_trends():
         count = await trend_service.refresh()
         return {"retrieved": count}
     except RuntimeError as error:
-        raise HTTPException(status_code=502, detail=str(error)) from error
+        msg = str(error)
+        status_code = 503 if "not configured" in msg.lower() else (429 if "limit" in msg.lower() else 502)
+        raise HTTPException(status_code=status_code, detail=msg) from error
     except Exception as error:
         logger.exception("Could not refresh trend sources.")
-        raise HTTPException(status_code=502, detail="Trend sources are temporarily unavailable.") from error
+        raise HTTPException(status_code=502, detail="Live web search is temporarily unavailable. Please try again.") from error
 
 
 async def _create_image_asset(user_id: str, prompt: str, aspect_ratio: str) -> str:

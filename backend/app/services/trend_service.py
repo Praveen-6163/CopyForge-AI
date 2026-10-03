@@ -1,114 +1,203 @@
+import asyncio
 import datetime
-import html
+import json
 import logging
+import random
 import re
 import uuid
-import xml.etree.ElementTree as ET
-from html.parser import HTMLParser
 from urllib.parse import urlparse
+from typing import Any, Dict, List, Optional
 
 import httpx
 from sqlalchemy import text
 
+from app.core.config import settings
 from app.database.db import get_db
 
 logger = logging.getLogger("copyforge.trends")
 
-FEEDS = {
-    "OpenAI": "https://openai.com/news/rss.xml",
-    "Google DeepMind": "https://deepmind.google/blog/rss.xml",
-    "Anthropic": "https://www.anthropic.com/news/rss.xml",
-    "Hugging Face": "https://huggingface.co/blog/feed.xml",
-    "TechCrunch AI": "https://techcrunch.com/category/artificial-intelligence/feed/",
-    "MIT Technology Review": "https://www.technologyreview.com/topic/artificial-intelligence/feed/",
+TREND_CACHE_TTL_SECONDS = 15 * 60  # 15 minutes
+VALID_CATEGORIES = {
+    "AI", "LLMs", "Research", "Tools", "Business", "Robotics", "Developer", "Student Opportunities"
 }
-FEED_REFRESH_SECONDS = 15 * 60
+VALID_IMPORTANCE = {"High", "Medium", "Low"}
+VALID_FRESHNESS = {"Today", "Yesterday", "Recent"}
+
+SEARCH_PROMPT = """You are an expert AI research & industry intelligence analyst.
+Search Google for the top 8-12 latest real-world AI and technology news, breakthroughs, models, tool launches, research advancements, and developer/student opportunities from the last 24-72 hours.
+
+Topics to discover:
+- Generative AI, LLMs, and Multimodal models (Gemini, OpenAI, Anthropic, DeepMind, Meta, Microsoft, etc.)
+- Machine Learning, Computer Vision, NLP, Data Science, and Robotics breakthroughs
+- AI Developer tools, open source frameworks, Hugging Face releases, NVIDIA hardware/software updates
+- Student opportunities, AI grants, competitions, and research updates
+
+CRITICAL INSTRUCTIONS:
+1. ONLY return real current news discovered through Google Search. Do NOT invent, hallucinate, or use placeholder data.
+2. Every item MUST have a real, verified source URL (e.g., official blog post, TechCrunch, ArXiv, Wired, The Verge, MIT Tech Review, etc.).
+3. Return ONLY a valid JSON array of objects. Do NOT include markdown commentary outside the JSON.
+
+JSON Schema per item:
+[
+  {
+    "title": "Headline of the news or announcement",
+    "summary": "2-3 sentence factual summary of what was released or discovered",
+    "category": "AI" | "LLMs" | "Research" | "Tools" | "Business" | "Robotics" | "Developer" | "Student Opportunities",
+    "importance": "High" | "Medium" | "Low",
+    "whyItMatters": "Why this matters to developers, engineers, students, or businesses",
+    "publishedAt": "YYYY-MM-DDTHH:MM:SSZ (or null if exact timestamp is unknown)",
+    "sourceName": "Actual name of publisher or organization (e.g. Google DeepMind, OpenAI, TechCrunch)",
+    "sourceUrl": "https://... (real source article URL)",
+    "sourceTitle": "Exact article title or announcement name",
+    "tags": ["AI", "LLMs", "Research"],
+    "freshness": "Today" | "Yesterday" | "Recent"
+  }
+]"""
 
 
-class _TextExtractor(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.parts: list[str] = []
-
-    def handle_data(self, data: str) -> None:
-        self.parts.append(data)
-
-
-def _clean_text(value: str | None) -> str:
-    if not value:
-        return ""
-    parser = _TextExtractor()
-    parser.feed(value)
-    return re.sub(r"\s+", " ", html.unescape(" ".join(parser.parts))).strip()
+def _clean_json_str(text_content: str) -> str:
+    cleaned = text_content.strip()
+    if "```" in cleaned:
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    # Find JSON array bracket boundaries if there is surrounding text
+    start = cleaned.find("[")
+    end = cleaned.rfind("]")
+    if start != -1 and end != -1 and end > start:
+        cleaned = cleaned[start : end + 1]
+    return cleaned.strip()
 
 
-def _child_text(element: ET.Element, *names: str) -> str | None:
-    for child in element.iter():
-        if child.tag.rsplit("}", 1)[-1].lower() in names and child.text:
-            return child.text.strip()
+def _normalize_category(cat: str | None) -> str:
+    if not cat:
+        return "AI"
+    cat_clean = cat.strip()
+    for valid in VALID_CATEGORIES:
+        if valid.lower() == cat_clean.lower():
+            return valid
+    if "llm" in cat_clean.lower():
+        return "LLMs"
+    if "research" in cat_clean.lower() or "paper" in cat_clean.lower():
+        return "Research"
+    if "tool" in cat_clean.lower() or "sdk" in cat_clean.lower() or "dev" in cat_clean.lower():
+        return "Tools"
+    if "robot" in cat_clean.lower():
+        return "Robotics"
+    if "student" in cat_clean.lower() or "career" in cat_clean.lower() or "grant" in cat_clean.lower():
+        return "Student Opportunities"
+    if "business" in cat_clean.lower() or "market" in cat_clean.lower() or "enterprise" in cat_clean.lower():
+        return "Business"
+    return "AI"
+
+
+def _normalize_importance(imp: str | None) -> str:
+    if not imp:
+        return "High"
+    imp_clean = imp.strip().capitalize()
+    return imp_clean if imp_clean in VALID_IMPORTANCE else "High"
+
+
+def _normalize_freshness(fresh: str | None) -> str:
+    if not fresh:
+        return "Recent"
+    fresh_clean = fresh.strip().capitalize()
+    return fresh_clean if fresh_clean in VALID_FRESHNESS else "Recent"
+
+
+def _validate_url(url: str | None) -> Optional[str]:
+    if not url:
+        return None
+    url = url.strip()
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme in ("http", "https") and parsed.hostname:
+            return url
+    except Exception:
+        pass
     return None
-
-
-def _entry_link(entry: ET.Element) -> str | None:
-    for child in entry:
-        if child.tag.rsplit("}", 1)[-1].lower() == "link":
-            link = child.attrib.get("href") or child.text
-            if link:
-                return link.strip()
-    return None
-
-
-def _feed_items(xml: bytes, source: str, retrieved_at: str) -> list[dict[str, str | None]]:
-    root = ET.fromstring(xml)
-    items: list[dict[str, str | None]] = []
-    for entry in root.iter():
-        if entry.tag.rsplit("}", 1)[-1].lower() not in {"item", "entry"}:
-            continue
-        title = _clean_text(_child_text(entry, "title"))
-        link = _entry_link(entry)
-        summary = _clean_text(
-            _child_text(entry, "description", "summary", "content", "encoded")
-        )
-        parsed_url = urlparse(link or "")
-        if (
-            not title
-            or not link
-            or parsed_url.scheme != "https"
-            or not parsed_url.hostname
-        ):
-            continue
-        items.append({
-            "id": str(uuid.uuid5(uuid.NAMESPACE_URL, link)),
-            "title": title[:500],
-            "summary": (summary or title)[:5000],
-            "source": source,
-            "source_url": link,
-            "published_at": _child_text(
-                entry, "pubdate", "published", "updated", "date"
-            ),
-            "retrieved_at": retrieved_at,
-        })
-    return items
 
 
 class TrendService:
-    async def list_trends(self, refresh: bool = False) -> list[dict[str, str | None]]:
+    def __init__(self) -> None:
+        self._memory_cache: list[dict[str, Any]] = []
+        self._last_fetched_at: Optional[datetime.datetime] = None
+
+    def _require_api_key(self) -> str:
+        if not settings.AI_CONFIGURED:
+            raise RuntimeError("Gemini AI is not configured on the backend. Add GEMINI_API_KEY to environment.")
+        return settings.GEMINI_API_KEY
+
+    async def list_trends(self, refresh: bool = False) -> list[dict[str, Any]]:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        
+        # Check in-memory cache
+        if not refresh and self._memory_cache and self._last_fetched_at:
+            if (now - self._last_fetched_at).total_seconds() < TREND_CACHE_TTL_SECONDS:
+                return self._memory_cache
+
+        # Check database cache
         async with get_db() as db:
             latest = (
                 await db.execute(text("SELECT MAX(retrieved_at) FROM trend_items"))
             ).scalar_one_or_none()
+            
             is_stale = not latest
             if latest:
                 try:
-                    retrieved_at = datetime.datetime.fromisoformat(str(latest))
-                    is_stale = (
-                        datetime.datetime.now(datetime.timezone.utc) - retrieved_at
-                    ).total_seconds() >= FEED_REFRESH_SECONDS
+                    latest_dt = datetime.datetime.fromisoformat(str(latest))
+                    if latest_dt.tzinfo is None:
+                        latest_dt = latest_dt.replace(tzinfo=datetime.timezone.utc)
+                    is_stale = (now - latest_dt).total_seconds() >= TREND_CACHE_TTL_SECONDS
                 except ValueError:
                     is_stale = True
 
-        if refresh or is_stale:
+            if not refresh and not is_stale:
+                rows = (
+                    await db.execute(
+                        text(
+                            """
+                            SELECT id, title, summary, source, source_url,
+                                   published_at, retrieved_at, category, importance,
+                                   why_it_matters, source_title, tags_json, freshness
+                            FROM trend_items
+                            ORDER BY COALESCE(published_at, retrieved_at) DESC
+                            LIMIT 30
+                            """
+                        )
+                    )
+                ).mappings().all()
+                if rows:
+                    items = [self._row_to_trend(dict(r)) for r in rows]
+                    self._memory_cache = items
+                    self._last_fetched_at = now
+                    return items
+
+        # Stale or forced refresh: fetch fresh trends with Google Search grounding
+        try:
             await self.refresh()
+        except RuntimeError as e:
+            # If search encounters rate limit or network error, return existing DB items if available
+            async with get_db() as db:
+                rows = (
+                    await db.execute(
+                        text(
+                            """
+                            SELECT id, title, summary, source, source_url,
+                                   published_at, retrieved_at, category, importance,
+                                   why_it_matters, source_title, tags_json, freshness
+                            FROM trend_items
+                            ORDER BY COALESCE(published_at, retrieved_at) DESC
+                            LIMIT 30
+                            """
+                        )
+                    )
+                ).mappings().all()
+            if rows:
+                logger.warning("Returning cached trends due to refresh error: %s", e)
+                items = [self._row_to_trend(dict(r)) for r in rows]
+                self._memory_cache = items
+                return items
+            raise
 
         async with get_db() as db:
             rows = (
@@ -116,62 +205,248 @@ class TrendService:
                     text(
                         """
                         SELECT id, title, summary, source, source_url,
-                               published_at, retrieved_at
+                               published_at, retrieved_at, category, importance,
+                               why_it_matters, source_title, tags_json, freshness
                         FROM trend_items
                         ORDER BY COALESCE(published_at, retrieved_at) DESC
-                        LIMIT 100
+                        LIMIT 30
                         """
                     )
                 )
             ).mappings().all()
-        return [dict(row) for row in rows]
+        items = [self._row_to_trend(dict(r)) for r in rows]
+        self._memory_cache = items
+        self._last_fetched_at = now
+        return items
+
+    def _row_to_trend(self, row: dict[str, Any]) -> dict[str, Any]:
+        tags = []
+        tags_raw = row.get("tags_json")
+        if tags_raw:
+            try:
+                tags = json.loads(tags_raw) if isinstance(tags_raw, str) else tags_raw
+            except Exception:
+                tags = []
+
+        return {
+            "id": row.get("id"),
+            "title": row.get("title"),
+            "summary": row.get("summary"),
+            "category": row.get("category") or "AI",
+            "importance": row.get("importance") or "High",
+            "whyItMatters": row.get("why_it_matters") or "",
+            "publishedAt": row.get("published_at"),
+            "retrievedAt": row.get("retrieved_at"),
+            "sourceName": row.get("source") or "Web Intelligence",
+            "sourceUrl": row.get("source_url"),
+            "sourceTitle": row.get("source_title") or row.get("title"),
+            "tags": tags if isinstance(tags, list) else [],
+            "freshness": row.get("freshness") or "Recent",
+            # Compatibility fields
+            "source": row.get("source") or "Web Intelligence",
+            "source_url": row.get("source_url"),
+            "published_at": row.get("published_at"),
+            "retrieved_at": row.get("retrieved_at"),
+        }
+
+    async def _call_gemini_search(self, api_key: str) -> dict[str, Any]:
+        candidate_models = [
+            settings.GEMINI_MODEL,
+            "gemini-3.8-flash",
+            "gemini-3.7-flash",
+            "gemini-3.5-flash",
+            "gemini-2.5-flash",
+        ]
+        # Deduplicate while preserving order
+        models_to_try = list(dict.fromkeys(candidate_models))
+
+        headers = {
+            "x-goog-api-key": api_key,
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": SEARCH_PROMPT}],
+                }
+            ],
+            "tools": [{"googleSearch": {}}],
+        }
+
+        last_error = "Unable to connect to the Gemini service."
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            for model_name in models_to_try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+                for attempt in range(1, 4):
+                    try:
+                        response = await client.post(url, headers=headers, json=payload)
+                        if response.status_code == 200:
+                            return response.json()
+                        if response.status_code in (401, 403):
+                            raise RuntimeError("The configured Gemini API key was rejected.")
+                        if response.status_code == 429:
+                            if attempt == 3:
+                                raise RuntimeError("Gemini request limit reached. Please try again later.")
+                            await asyncio.sleep(2 ** (attempt - 1) + random.uniform(0.3, 0.8))
+                            continue
+                        if response.status_code == 404:
+                            logger.info("Model %s returned 404, falling back to next available model.", model_name)
+                            break
+                        if response.status_code >= 500:
+                            if attempt == 3:
+                                break
+                            await asyncio.sleep(2 ** (attempt - 1) + random.uniform(0.2, 0.5))
+                            continue
+                        last_error = f"Gemini API returned status {response.status_code}: {response.text[:200]}"
+                        break
+                    except (httpx.ConnectError, httpx.TimeoutException) as conn_err:
+                        if attempt == 3:
+                            last_error = f"Connection timeout: {conn_err}"
+                            break
+                        await asyncio.sleep(2 ** (attempt - 1) + random.uniform(0.2, 0.5))
+                    except RuntimeError:
+                        raise
+
+        raise RuntimeError(f"Live web search is temporarily unavailable. {last_error}")
+
+    def _parse_search_results(self, data: dict[str, Any], retrieved_at: str) -> list[dict[str, Any]]:
+        candidates = data.get("candidates") or []
+        if not candidates:
+            raise RuntimeError("No recent AI trends were found. Try refreshing.")
+
+        first_cand = candidates[0]
+        content = first_cand.get("content") or {}
+        parts = content.get("parts") or []
+        text_content = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
+        if not text_content.strip():
+            raise RuntimeError("The AI trend discovery model returned an empty response.")
+
+        cleaned_json = _clean_json_str(text_content)
+        try:
+            raw_items = json.loads(cleaned_json)
+        except json.JSONDecodeError as err:
+            logger.error("Failed to parse JSON from Gemini search response: %s. Raw was: %s", err, text_content[:400])
+            raise RuntimeError("Live web search returned unexpected data format. Please retry.") from err
+
+        if not isinstance(raw_items, list):
+            raise RuntimeError("AI trend response format error: expected a list of trend items.")
+
+        # Extract grounding metadata chunks for source verification
+        grounding_metadata = first_cand.get("groundingMetadata") or {}
+        grounding_chunks = grounding_metadata.get("groundingChunks") or []
+        grounding_urls = []
+        for chunk in grounding_chunks:
+            web = chunk.get("web") or {}
+            uri = web.get("uri")
+            if uri:
+                grounding_urls.append((uri, web.get("title") or "Verified Web Source"))
+
+        processed_items: list[dict[str, Any]] = []
+        for idx, item in enumerate(raw_items):
+            if not isinstance(item, dict):
+                continue
+            title = str(item.get("title") or "").strip()
+            summary = str(item.get("summary") or "").strip()
+            if not title or not summary:
+                continue
+
+            source_url = _validate_url(item.get("sourceUrl") or item.get("source_url"))
+            source_name = str(item.get("sourceName") or item.get("source") or "").strip()
+
+            # If URL is missing, match with grounding URLs if available
+            if not source_url and grounding_urls:
+                fallback_idx = idx % len(grounding_urls)
+                source_url, matched_title = grounding_urls[fallback_idx]
+                if not source_name or source_name.lower() in ("source", "web", "url"):
+                    source_name = matched_title
+
+            if not source_url:
+                continue
+
+            if not source_name:
+                parsed_host = urlparse(source_url).hostname or "Tech News"
+                source_name = parsed_host.removeprefix("www.")
+
+            item_id = str(uuid.uuid5(uuid.NAMESPACE_URL, source_url))
+            category = _normalize_category(item.get("category"))
+            importance = _normalize_importance(item.get("importance"))
+            freshness = _normalize_freshness(item.get("freshness"))
+            why_it_matters = str(item.get("whyItMatters") or item.get("why_it_matters") or "").strip()
+            source_title = str(item.get("sourceTitle") or item.get("source_title") or title).strip()
+            
+            raw_tags = item.get("tags")
+            tags = [str(t).strip() for t in raw_tags if str(t).strip()] if isinstance(raw_tags, list) else ["AI", category]
+            if not tags:
+                tags = ["AI", category]
+
+            published_at = item.get("publishedAt") or item.get("published_at")
+            if published_at:
+                published_at = str(published_at).strip()
+
+            processed_items.append({
+                "id": item_id,
+                "title": title[:500],
+                "summary": summary[:5000],
+                "source": source_name[:100],
+                "source_url": source_url[:2000],
+                "published_at": published_at,
+                "retrieved_at": retrieved_at,
+                "category": category,
+                "importance": importance,
+                "why_it_matters": why_it_matters[:5000],
+                "source_title": source_title[:500],
+                "tags_json": json.dumps(tags[:10]),
+                "freshness": freshness,
+            })
+
+        if not processed_items:
+            raise RuntimeError("No valid AI trend articles could be verified from web search.")
+
+        return processed_items
 
     async def refresh(self) -> int:
+        api_key = self._require_api_key()
         retrieved_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        records: list[dict[str, str | None]] = []
-        successes = 0
-        async with httpx.AsyncClient(
-            timeout=12.0,
-            follow_redirects=True,
-            headers={"User-Agent": "CopyForge/1.0 (+https://copyforge-aiauto.netlify.app)"},
-        ) as client:
-            for source, feed_url in FEEDS.items():
-                try:
-                    response = await client.get(feed_url)
-                    response.raise_for_status()
-                    records.extend(_feed_items(response.content, source, retrieved_at))
-                    successes += 1
-                except (httpx.HTTPError, ET.ParseError, ValueError):
-                    logger.warning("Could not retrieve the %s trend feed.", source)
-
-        if not successes:
-            raise RuntimeError("Trend sources are temporarily unavailable.")
-        if not records:
-            raise RuntimeError("The configured trend sources returned no valid articles.")
+        
+        gemini_response = await self._call_gemini_search(api_key)
+        trend_records = self._parse_search_results(gemini_response, retrieved_at)
 
         async with get_db() as db:
-            for item in records:
+            for item in trend_records:
                 await db.execute(
                     text(
                         """
                         INSERT INTO trend_items (
                             id, title, summary, source, source_url,
-                            published_at, retrieved_at
+                            published_at, retrieved_at, category, importance,
+                            why_it_matters, source_title, tags_json, freshness
                         ) VALUES (
                             :id, :title, :summary, :source, :source_url,
-                            :published_at, :retrieved_at
+                            :published_at, :retrieved_at, :category, :importance,
+                            :why_it_matters, :source_title, :tags_json, :freshness
                         )
                         ON CONFLICT(source_url) DO UPDATE SET
                             title = excluded.title,
                             summary = excluded.summary,
                             source = excluded.source,
                             published_at = excluded.published_at,
-                            retrieved_at = excluded.retrieved_at
+                            retrieved_at = excluded.retrieved_at,
+                            category = excluded.category,
+                            importance = excluded.importance,
+                            why_it_matters = excluded.why_it_matters,
+                            source_title = excluded.source_title,
+                            tags_json = excluded.tags_json,
+                            freshness = excluded.freshness
                         """
                     ),
                     item,
                 )
-        return len(records)
+
+        self._memory_cache = [self._row_to_trend(r) for r in trend_records]
+        self._last_fetched_at = datetime.datetime.now(datetime.timezone.utc)
+        return len(trend_records)
 
 
 trend_service = TrendService()

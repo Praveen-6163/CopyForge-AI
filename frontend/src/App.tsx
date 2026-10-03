@@ -34,6 +34,7 @@ import {
 import {
   fetchHealth, generateCopy, improveCopy, toggleSaveItem
 } from './services/api';
+import { TrendItem } from './services/platformApi';
 import { getWorkspacePreferences } from './services/workspacePreferences';
 
 const DEFAULT_FORM: GenerateRequest = {
@@ -183,6 +184,21 @@ export const App: React.FC = () => {
     });
   };
 
+  const handleDraftFromTrend = (trend: TrendItem, targetPlatform: 'LinkedIn' | 'Instagram' = 'LinkedIn') => {
+    const sourceName = trend.sourceName || trend.source || 'Web Source';
+    const sourceUrl = trend.sourceUrl || trend.source_url || '';
+    const whyItMatters = trend.whyItMatters ? `\n\nWhy it matters: ${trend.whyItMatters}` : '';
+    const sourceCitation = sourceUrl ? `\n\nSource: ${sourceName} (${sourceUrl})` : `\n\nSource: ${sourceName}`;
+
+    setFormData((prev) => ({
+      ...prev,
+      product_name: trend.title,
+      product_description: `${trend.summary}${whyItMatters}${sourceCitation}`,
+      platform: targetPlatform as PlatformType,
+      additional_instructions: `Highlight key insights from this ${trend.category || 'AI'} trend. Source: ${sourceName}.`,
+    }));
+  };
+
   const handleResetForm = () => {
     setGenerationOutput(null);
     setPipelineStage('idle');
@@ -271,7 +287,7 @@ export const App: React.FC = () => {
       } />
 
       <Route path="/trend-radar" element={
-        <AppShell><TrendRadarPage /></AppShell>
+        <AppShell><TrendRadarPage onCreatePost={handleDraftFromTrend} /></AppShell>
       } />
 
       <Route path="/studio" element={

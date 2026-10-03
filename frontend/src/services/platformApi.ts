@@ -14,10 +14,21 @@ export interface TrendItem {
   id: string;
   title: string;
   summary: string;
-  source: string;
-  source_url: string;
-  published_at: string | null;
-  retrieved_at: string;
+  category?: string;
+  importance?: 'High' | 'Medium' | 'Low';
+  whyItMatters?: string;
+  publishedAt?: string | null;
+  retrievedAt?: string;
+  sourceName?: string;
+  sourceUrl?: string;
+  sourceTitle?: string | null;
+  tags?: string[];
+  freshness?: 'Today' | 'Yesterday' | 'Recent';
+  // Backwards compatibility fields
+  source?: string;
+  source_url?: string;
+  published_at?: string | null;
+  retrieved_at?: string;
 }
 
 export interface ScheduledPost {

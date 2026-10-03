@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Sparkles,
   PenTool,
@@ -16,7 +17,7 @@ import {
   Wand2,
   MessageSquare
 } from 'lucide-react';
-import { createPost } from '../services/platformApi';
+import { createPost, TrendItem } from '../services/platformApi';
 import {
   GenerateRequest,
   GenerationResponse,
@@ -57,11 +58,30 @@ export const ContentStudioPage: React.FC<ContentStudioProps> = ({
   onViewCompiledPrompt,
   onResetForm,
 }) => {
+  const location = useLocation();
   const [showAdvancedParams, setShowAdvancedParams] = useState(false);
   const [copied, setCopied] = useState(false);
   const [postActionBusy, setPostActionBusy] = useState(false);
   const [postActionNotice, setPostActionNotice] = useState('');
   const [postActionError, setPostActionError] = useState('');
+
+  useEffect(() => {
+    const trendState = location.state as { trend?: TrendItem; targetPlatform?: PlatformType } | null;
+    if (trendState?.trend) {
+      const trend = trendState.trend;
+      const sourceName = trend.sourceName || trend.source || 'Web Source';
+      const sourceUrl = trend.sourceUrl || trend.source_url || '';
+      const whyItMatters = trend.whyItMatters ? `\n\nWhy it matters: ${trend.whyItMatters}` : '';
+      const sourceCitation = sourceUrl ? `\n\nSource: ${sourceName} (${sourceUrl})` : `\n\nSource: ${sourceName}`;
+      setFormData((prev) => ({
+        ...prev,
+        product_name: trend.title,
+        product_description: `${trend.summary}${whyItMatters}${sourceCitation}`,
+        platform: (trendState.targetPlatform || prev.platform || 'LinkedIn') as PlatformType,
+        additional_instructions: `Highlight key insights from this ${trend.category || 'AI'} trend. Source: ${sourceName}.`,
+      }));
+    }
+  }, [location.state, setFormData]);
 
   const handleCopy = () => {
     if (!generation?.generated_content) return;
