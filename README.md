@@ -22,7 +22,13 @@ CopyForge AI is a content-generation prototype for marketing teams, developers, 
 
 ## Demo Deployment Scope
 
-The Netlify site runs as a static frontend. Without `VITE_API_BASE_URL`, copy generation, history, bookmarks, templates, and workspace preferences use the browser's local demo engine and local storage. Trend cards, analytics, calendar entries, approval items, and artwork are sample data. Social OAuth, live trend feeds, image generation, background scheduling, and external publishing are not configured and do not run.
+The Netlify site runs as a static frontend. Without `VITE_API_BASE_URL`, copy generation, history, bookmarks, templates, and workspace preferences use the browser's local demo engine and local storage. Trend cards, analytics, calendar entries, approval items, and artwork are sample data. LinkedIn OAuth is enabled only when its server-side credentials are configured; live trend feeds, image generation, background scheduling, and external publishing are not configured and do not run.
+
+## LinkedIn OAuth setup
+
+LinkedIn OAuth is implemented in the existing FastAPI backend. In the LinkedIn Developer Portal, register the exact callback URL used by `LINKEDIN_REDIRECT_URI` and enable the OpenID Connect profile product plus the `w_member_social` member posting permission. Copy `.env.example` to an untracked `.env` file and fill in `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`, `LINKEDIN_REDIRECT_URI`, and a random `SECRET_KEY` of at least 32 characters. Set `FRONTEND_ORIGIN` to the exact frontend origin (for example, `http://localhost:3000` during local development). The current backend default is port 8000; if registering the supplied local callback on port 5000, run the backend on port 5000 and point the local frontend API base/proxy to that port, or register a callback on port 8000 instead.
+
+The callback URL must resolve to the running backend and exactly match the URL registered in LinkedIn; do not use the local example callback for a deployed backend. Deploy the FastAPI backend over HTTPS, configure the same environment variables there, set the frontend build variable `VITE_API_BASE_URL` to the backend origin, and set `FRONTEND_ORIGIN` to the deployed frontend origin. Keep the client secret and `.env` on the server only. LinkedIn access tokens are encrypted before storage in the backend SQLite database; the status API never returns tokens. OAuth connection does not itself publish content.
 
 ---
 

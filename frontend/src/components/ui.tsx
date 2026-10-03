@@ -476,15 +476,21 @@ export interface SocialAccountCardProps {
   description: string;
   status: 'connected' | 'disconnected';
   accountName?: string;
+  profileImage?: string | null;
   lastSynced?: string;
+  connectedLabel?: string;
+  connectLabel?: string;
+  unavailableMessage?: string;
   onConnect?: () => void;
   onDisconnect?: () => void;
   connecting?: boolean;
+  disconnecting?: boolean;
   connectAvailable?: boolean;
 }
 
 export const SocialAccountCard: React.FC<SocialAccountCardProps> = ({
-  platform, name, description, status, accountName, lastSynced, onConnect, onDisconnect, connecting, connectAvailable = true
+  platform, name, description, status, accountName, profileImage, lastSynced, connectedLabel,
+  connectLabel, unavailableMessage, onConnect, onDisconnect, connecting, disconnecting, connectAvailable = true
 }) => {
   const isConnected = status === 'connected';
   const isLinkedIn = platform === 'linkedin';
@@ -493,10 +499,12 @@ export const SocialAccountCard: React.FC<SocialAccountCardProps> = ({
     <div className="editorial-card rounded-2xl p-6 relative overflow-hidden">
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3.5">
-          <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-bold text-lg ${
+          <div className={`w-12 h-12 overflow-hidden rounded-xl flex items-center justify-center font-bold text-lg ${
             isLinkedIn ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30' : 'bg-pink-600/20 text-pink-400 border border-pink-500/30'
           }`}>
-            {isLinkedIn ? 'in' : 'ig'}
+            {isLinkedIn && profileImage
+              ? <img src={profileImage} alt={`${name} profile`} className="h-full w-full object-cover" />
+              : isLinkedIn ? 'in' : 'ig'}
           </div>
           <div>
             <h4 className="text-base font-bold text-white">{name}</h4>
@@ -504,7 +512,7 @@ export const SocialAccountCard: React.FC<SocialAccountCardProps> = ({
           </div>
         </div>
         <Badge variant={isConnected ? 'success' : 'default'} dot>
-          {isConnected ? 'Connected' : 'Not Connected'}
+          {isConnected ? (connectedLabel || 'Connected') : 'Not Connected'}
         </Badge>
       </div>
 
@@ -512,16 +520,20 @@ export const SocialAccountCard: React.FC<SocialAccountCardProps> = ({
         <div className="mt-4 pt-4 border-t border-white/[0.06] flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-white">{accountName}</p>
-            <p className="text-[10px] text-slate-400">Last synced: {lastSynced || 'Just now'}</p>
+            <p className="text-[10px] text-slate-400">Connected: {lastSynced || 'Just now'}</p>
           </div>
-          <Button variant="danger" size="sm" onClick={onDisconnect}>
+          <Button variant="danger" size="sm" onClick={onDisconnect} loading={disconnecting} disabled={disconnecting}>
             Disconnect
           </Button>
         </div>
       ) : (
         <div className="mt-4 pt-4 border-t border-white/[0.06] flex items-center justify-between">
           <p className="text-xs text-slate-400">
-            {connectAvailable ? 'Official OAuth 2.0 connection' : 'OAuth provider is not configured in this demo.'}
+            {connecting
+              ? 'Redirecting to LinkedIn…'
+              : connectAvailable
+                ? 'Official OAuth 2.0 connection'
+                : unavailableMessage || `${name} connection is not configured.`}
           </p>
           <Button
             variant="primary" 
@@ -530,7 +542,7 @@ export const SocialAccountCard: React.FC<SocialAccountCardProps> = ({
             loading={connecting}
             disabled={!connectAvailable}
           >
-            {connectAvailable ? `Connect ${name}` : 'Unavailable'}
+            {connecting ? 'Connecting…' : connectLabel || (connectAvailable ? `Connect ${name}` : 'Not configured')}
           </Button>
         </div>
       )}

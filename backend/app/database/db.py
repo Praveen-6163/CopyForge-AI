@@ -24,6 +24,26 @@ CREATE TABLE IF NOT EXISTS history (
 CREATE INDEX IF NOT EXISTS idx_history_platform ON history(platform);
 CREATE INDEX IF NOT EXISTS idx_history_tone ON history(tone);
 CREATE INDEX IF NOT EXISTS idx_history_is_saved ON history(is_saved);
+
+CREATE TABLE IF NOT EXISTS linkedin_oauth_states (
+    state_hash TEXT PRIMARY KEY,
+    session_hash TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_linkedin_oauth_states_expiry
+    ON linkedin_oauth_states(expires_at);
+
+CREATE TABLE IF NOT EXISTS linkedin_connections (
+    session_hash TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    member_id TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    profile_image TEXT,
+    access_token_ciphertext TEXT NOT NULL,
+    token_expires_at INTEGER NOT NULL,
+    connected_at TEXT NOT NULL
+);
 """
 
 async def init_db():

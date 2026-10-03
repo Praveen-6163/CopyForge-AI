@@ -20,6 +20,7 @@ import { Button, Badge } from '../components/ui';
 import { GenerationResponse, HealthStatus } from '../types/generation';
 import { scheduleGeneration } from '../services/scheduledPosts';
 import { getWorkspacePreferences, saveWorkspacePreferences, WorkspacePreferences } from '../services/workspacePreferences';
+import { useLinkedInStatus } from '../hooks/useLinkedInStatus';
 
 interface DashboardPageProps {
   health: HealthStatus | null;
@@ -97,6 +98,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const [preferences, setPreferences] = useState<WorkspacePreferences>(getWorkspacePreferences);
   const [notice, setNotice] = useState('');
   const [scheduledNotice, setScheduledNotice] = useState('');
+  const linkedin = useLinkedInStatus();
   const linkedinGeneration = generation?.platform === 'LinkedIn' ? generation : dashboardContent.linkedin;
   const instagramGeneration = generation?.platform === 'Instagram' ? generation : dashboardContent.instagram;
 
@@ -204,7 +206,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
               <span className="cf-account-icon cf-linkedin-icon"><Linkedin className="h-5 w-5" /></span>
               <span className="min-w-0 flex-1 text-left">
                 <span className="block text-sm font-semibold text-white">LinkedIn</span>
-                <span className="mt-1 block text-[11px] text-amber-300">Not connected</span>
+                <span className={`mt-1 block truncate text-[11px] ${linkedin.status?.connected ? 'text-emerald-300' : 'text-amber-300'}`}>
+                  {linkedin.loading
+                    ? 'Checking connection…'
+                    : linkedin.status?.connected
+                      ? `LinkedIn Connected · ${linkedin.status.display_name || 'Account'}`
+                      : linkedin.backendUnavailable
+                        ? 'Backend unavailable'
+                        : linkedin.status?.configured
+                          ? 'Not connected'
+                          : 'LinkedIn not configured'}
+                </span>
               </span>
               <ArrowRight className="h-4 w-4 text-slate-500" />
             </button>

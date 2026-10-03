@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.database.db import init_db
 from app.api.router import router
+from app.api.linkedin import router as linkedin_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -31,16 +32,16 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Enable CORS for local dev
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[settings.FRONTEND_ORIGIN],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(router)
+app.include_router(linkedin_router)
 
 @app.get("/")
 async def root():
