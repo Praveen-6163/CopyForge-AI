@@ -170,7 +170,7 @@ export const NewSidebar: React.FC<SidebarProps> = ({ health, onOpenHistory, mobi
                 {!health ? 'Backend unavailable' : 'Backend connected'}
               </p>
               <p className="text-[10px] text-slate-500">
-                {health ? (health.ai_configured ? health.openai_model : 'AI provider not configured') : 'Check backend URL'}
+                {health ? (health.ai_configured ? `${health.ai_provider || 'Gemini'} (${health.ai_model || health.openai_model || 'gemini-2.5-flash'})` : 'AI provider not configured') : 'Check backend URL'}
               </p>
             </div>
           </div>

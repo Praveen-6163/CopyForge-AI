@@ -116,7 +116,9 @@ export interface HealthStatus {
   project_name: string;
   tagline: string;
   version: string;
-  openai_model: string;
+  ai_provider?: string;
+  ai_model?: string;
+  openai_model?: string;
   ai_configured: boolean;
 }
 

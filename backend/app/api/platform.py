@@ -7,9 +7,9 @@ import re
 import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
-from openai import APIError, AsyncOpenAI, AuthenticationError
 from sqlalchemy import text
 
 from app.api.auth import require_user
@@ -526,27 +526,61 @@ async def refresh_trends():
 async def _create_image_asset(user_id: str, prompt: str, aspect_ratio: str) -> str:
     if not settings.AI_CONFIGURED:
         raise ImageProviderError(
-            "Image generation is not configured. Add OPENAI_API_KEY to the backend environment.",
+            "Image generation is not configured. Add GEMINI_API_KEY to the backend environment.",
             status_code=503,
         )
+    aspect_ratio_map = {
+        "1:1": "1:1",
+        "16:9": "16:9",
+        "4:5": "3:4",
+        "4:3": "4:3",
+        "9:16": "9:16",
+    }
+    target_aspect = aspect_ratio_map.get(aspect_ratio, "1:1")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_IMAGE_MODEL}:predict"
+    headers = {
+        "x-goog-api-key": settings.GEMINI_API_KEY,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "instances": [{"prompt": prompt}],
+        "parameters": {
+            "sampleCount": 1,
+            "aspectRatio": target_aspect,
+            "outputOptions": {"mimeType": "image/png"},
+        },
+    }
     try:
-        async with AsyncOpenAI(api_key=settings.OPENAI_API_KEY, timeout=90.0) as client:
-            result = await client.images.generate(
-                model=settings.OPENAI_IMAGE_MODEL,
-                prompt=prompt,
-                size=IMAGE_SIZES[aspect_ratio],
-                n=1,
-            )
-    except AuthenticationError as error:
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            response = await client.post(url, headers=headers, json=payload)
+            if response.status_code in (401, 403):
+                raise ImageProviderError(
+                    "The configured image provider credentials were rejected.", status_code=503
+                )
+            if response.status_code != 200:
+                logger.warning("The image provider returned status %s: %s", response.status_code, response.text[:200])
+                raise ImageProviderError(
+                    "Image generation failed. Check provider availability and retry.", status_code=502
+                )
+            data = response.json()
+    except ImageProviderError:
+        raise
+    except httpx.RequestError as error:
+        logger.warning("The image provider could not be reached: %s", error)
         raise ImageProviderError(
-            "The configured image provider credentials were rejected.", status_code=503
+            "Image generation failed. Check provider availability and retry.", status_code=502
         ) from error
-    except APIError as error:
-        logger.warning("The image provider could not generate an image.")
+    except Exception as error:
+        logger.exception("Unexpected error during image generation.")
         raise ImageProviderError(
-            "Image generation failed. Check provider availability and retry."
+            "Image generation failed. Check provider availability and retry.", status_code=502
         ) from error
-    image_data = result.data[0].b64_json if result.data else None
+
+    predictions = data.get("predictions") or []
+    image_data = None
+    if predictions and isinstance(predictions[0], dict):
+        image_data = predictions[0].get("bytesBase64Encoded")
+
     if not image_data:
         raise ImageProviderError("The image provider returned no image.")
     asset_id = str(uuid.uuid4())

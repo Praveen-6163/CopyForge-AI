@@ -36,7 +36,9 @@ async def health_check():
         project_name=settings.PROJECT_NAME,
         tagline=settings.TAGLINE,
         version=settings.VERSION,
-        openai_model=settings.OPENAI_MODEL,
+        ai_provider=settings.AI_PROVIDER,
+        ai_model=settings.GEMINI_MODEL,
+        openai_model=settings.GEMINI_MODEL,
         ai_configured=settings.AI_CONFIGURED,
     )
 

@@ -60,8 +60,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </p>
             <p className="text-xs text-slate-300 mt-2 leading-relaxed">
               {configured
-                ? `Text generation uses ${health?.openai_model} through the backend.`
-                : 'Add OPENAI_API_KEY to the Render backend environment. Do not add provider credentials to the frontend.'}
+                ? `Text generation uses ${health?.ai_provider || 'Gemini'} (${health?.ai_model || health?.openai_model || 'gemini-2.5-flash'}) through the backend.`
+                : 'Add GEMINI_API_KEY to the Render backend environment. Do not add provider credentials to the frontend.'}
             </p>
           </div>
           <div className="pt-2 flex justify-end border-t border-slate-800">

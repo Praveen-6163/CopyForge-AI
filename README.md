@@ -4,11 +4,11 @@ CopyForge AI is a social-content workspace backed by a FastAPI service and Postg
 
 ## Features
 
-- Generate and refine platform-specific content through the configured OpenAI provider.
+- Generate and refine platform-specific content through the configured Google Gemini provider.
 - Store generation history and structured copy fields in the backend database.
 - Connect LinkedIn through LinkedIn OAuth; connect Instagram through Meta OAuth when the required app and permissions are configured.
 - Retrieve dated articles from real RSS/Atom sources in Trend Radar.
-- Generate and store images through the configured OpenAI image provider.
+- Generate and store images through the configured Google Gemini / Imagen provider.
 - Save drafts, review approvals, schedule posts, and publish through supported platform APIs.
 - Configure daily server-side content automation with auto-publish, approval-required, or draft-only modes.
 - Show publishing records and report platform analytics as unavailable when no official analytics data is available.
@@ -24,9 +24,9 @@ Configure these values as backend environment variables. Do not add secrets to f
 | `LINKEDIN_CLIENT_ID` | LinkedIn OAuth application ID. |
 | `LINKEDIN_CLIENT_SECRET` | LinkedIn OAuth application secret. |
 | `LINKEDIN_REDIRECT_URI` | `https://copyforge-ai-backend.onrender.com/auth/linkedin/callback` |
-| `OPENAI_API_KEY` | Server-side content and image generation credentials. |
-| `OPENAI_MODEL` | Text-generation model; defaults to `gpt-4o-mini`. |
-| `OPENAI_IMAGE_MODEL` | Image-generation model; defaults to `gpt-image-1`. |
+| `GEMINI_API_KEY` | Server-side content and image generation credentials (Google Gemini). |
+| `GEMINI_MODEL` | Text-generation model; defaults to `gemini-2.5-flash`. |
+| `GEMINI_IMAGE_MODEL` | Image-generation model; defaults to `imagen-3.0-generate-002`. |
 | `META_APP_ID` | Meta application ID for Instagram Business Login. |
 | `META_APP_SECRET` | Meta application secret. |
 | `META_REDIRECT_URI` | `https://copyforge-ai-backend.onrender.com/auth/instagram/callback` |

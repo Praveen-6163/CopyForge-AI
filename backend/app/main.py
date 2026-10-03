@@ -34,9 +34,9 @@ async def lifespan(app: FastAPI):
     else:
         logging.info("LinkedIn OAuth is configured for callback %s", settings.LINKEDIN_REDIRECT_URI)
     if settings.AI_CONFIGURED:
-        logging.info("AI provider configured with model %s.", settings.OPENAI_MODEL)
+        logging.info("AI provider configured: %s with model %s.", settings.AI_PROVIDER, settings.GEMINI_MODEL)
     else:
-        logging.warning("AI provider is not configured. Set OPENAI_API_KEY on the backend.")
+        logging.warning("AI provider is not configured. Set GEMINI_API_KEY on the backend.")
     scheduler = asyncio.create_task(scheduler_loop(), name="copyforge-server-scheduler")
     try:
         yield
@@ -81,6 +81,7 @@ async def root():
         "project": settings.PROJECT_NAME,
         "tagline": settings.TAGLINE,
         "status": "running",
+        "ai_provider": settings.AI_PROVIDER if settings.AI_CONFIGURED else None,
         "ai_configured": settings.AI_CONFIGURED,
         "docs": "/docs"
     }

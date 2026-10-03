@@ -11,22 +11,38 @@ class Settings:
     API_V1_STR: str = "/api"
     
     @property
-    def OPENAI_API_KEY(self) -> str:
-        return os.getenv("OPENAI_API_KEY", "").strip()
+    def GEMINI_API_KEY(self) -> str:
+        return os.getenv("GEMINI_API_KEY", "").strip()
 
     @property
-    def OPENAI_MODEL(self) -> str:
-        return os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
+    def GEMINI_MODEL(self) -> str:
+        return os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
 
     @property
-    def OPENAI_IMAGE_MODEL(self) -> str:
-        return os.getenv("OPENAI_IMAGE_MODEL", "gpt-image-1").strip()
+    def GEMINI_IMAGE_MODEL(self) -> str:
+        return os.getenv("GEMINI_IMAGE_MODEL", "imagen-3.0-generate-002").strip()
 
     @property
     def AI_CONFIGURED(self) -> bool:
-        return bool(self.OPENAI_API_KEY) and not self.OPENAI_API_KEY.lower().startswith(
-            ("your_", "placeholder")
+        return bool(self.GEMINI_API_KEY) and not self.GEMINI_API_KEY.lower().startswith(
+            ("your_", "placeholder", "changeme")
         )
+
+    @property
+    def AI_PROVIDER(self) -> str:
+        return "Gemini" if self.AI_CONFIGURED else "None"
+
+    @property
+    def OPENAI_API_KEY(self) -> str:
+        return self.GEMINI_API_KEY
+
+    @property
+    def OPENAI_MODEL(self) -> str:
+        return self.GEMINI_MODEL
+
+    @property
+    def OPENAI_IMAGE_MODEL(self) -> str:
+        return self.GEMINI_IMAGE_MODEL
     
     @property
     def DB_PATH(self) -> str:

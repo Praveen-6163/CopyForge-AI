@@ -18,12 +18,12 @@ services:
         generateValue: true
       - key: DATABASE_URL
         sync: false
-      - key: OPENAI_API_KEY
+      - key: GEMINI_API_KEY
         sync: false
-      - key: OPENAI_MODEL
-        value: gpt-4o-mini
-      - key: OPENAI_IMAGE_MODEL
-        value: gpt-image-1
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_IMAGE_MODEL
+        value: imagen-3.0-generate-002
       - key: META_APP_ID
         sync: false
       - key: META_APP_SECRET
