@@ -139,3 +139,10 @@ async def root():
         "ai_configured": settings.AI_CONFIGURED,
         "docs": "/docs"
     }
+
+
+@app.get("/debug/routes")
+@app.get("/api/debug/routes")
+async def debug_routes():
+    routes = sorted({getattr(route, "path", str(route)) for route in app.routes})
+    return {"routes": routes}
