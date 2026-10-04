@@ -15,8 +15,7 @@ export interface LinkedInConnectionStatus {
 }
 
 const configuredApiBase = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/+$/, '');
-const backendOrigin = configuredApiBase?.replace(/\/api$/, '') ||
-  (import.meta.env.DEV ? '' : 'https://copyforge-ai-backend.onrender.com');
+const backendOrigin = configuredApiBase ? configuredApiBase.replace(/\/api$/, '') : '';
 const SESSION_KEY = 'copyforge_linkedin_session';
 
 export const getBackendOrigin = (): string => backendOrigin;

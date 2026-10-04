@@ -101,6 +101,7 @@ async def database_error_handler(request: Request, error: SQLAlchemyError):
 
 
 @app.get("/health")
+@app.get("/api/health")
 async def production_health():
     return {"status": "ok", "service": "copyforge-ai-backend"}
 

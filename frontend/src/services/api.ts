@@ -10,13 +10,8 @@ import {
 import { getLinkedInSession } from './linkedinOAuth';
 
 const configuredApiBase = import.meta.env.VITE_API_BASE_URL?.trim().replace(/\/+$/, '');
-const defaultApiBase = import.meta.env.DEV
-  ? ''
-  : 'https://copyforge-ai-backend.onrender.com';
-const backendOrigin = configuredApiBase || defaultApiBase;
-const API_BASE = backendOrigin
-  ? (backendOrigin.endsWith('/api') ? backendOrigin : `${backendOrigin}/api`)
-  : '/api';
+const backendOrigin = configuredApiBase ? configuredApiBase.replace(/\/api$/, '') : '';
+const API_BASE = backendOrigin ? `${backendOrigin}/api` : '/api';
 
 export const apiClient = axios.create({
   baseURL: API_BASE,
