@@ -403,6 +403,7 @@ async def _initialize_db(url: str) -> None:
             ("source_title", "TEXT"),
             ("tags_json", "TEXT DEFAULT '[]'"),
             ("freshness", "TEXT DEFAULT 'Recent'"),
+            ("image_url", "TEXT"),
         ):
             if column_name not in trend_columns:
                 await connection.execute(

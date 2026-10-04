@@ -24,6 +24,7 @@ export interface TrendItem {
   sourceTitle?: string | null;
   tags?: string[];
   freshness?: 'Today' | 'Yesterday' | 'Recent';
+  image_url?: string | null;
   // Backwards compatibility fields
   source?: string;
   source_url?: string;

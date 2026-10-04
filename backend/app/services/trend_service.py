@@ -1,225 +1,643 @@
+"""
+Trend Radar service — fetches real AI/tech news via free public RSS feeds.
+
+Gemini is NOT used here. This file has zero Gemini SDK imports.
+
+Sources:
+  - TechCrunch AI     (https://techcrunch.com/feed/)
+  - The Verge         (https://www.theverge.com/rss/index.xml)
+  - VentureBeat AI    (https://venturebeat.com/feed/)
+  - MIT Tech Review   (https://www.technologyreview.com/feed/)
+  - ArXiv CS.AI       (https://export.arxiv.org/rss/cs.AI)
+  - Wired             (https://www.wired.com/feed/rss)
+  - Analytics Vidhya  (https://www.analyticsvidhya.com/feed/)
+"""
+
+from __future__ import annotations
+
+import asyncio
 import datetime
+import hashlib
 import json
 import logging
 import re
 import uuid
+import xml.etree.ElementTree as ET
+from typing import Any
 from urllib.parse import urlparse
-from typing import Any, Dict, List, Optional
 
-from google.genai import types
+import httpx
 from sqlalchemy import text
 
-from app.core.config import settings
 from app.database.db import get_db
-from app.services.gemini_service import gemini_service
 
 logger = logging.getLogger("copyforge.trends")
 
-TREND_CACHE_TTL_SECONDS = 15 * 60  # 15 minutes
+# ─── Configuration ────────────────────────────────────────────────────────────
+
+TREND_CACHE_TTL_SECONDS = 20 * 60   # 20 minutes
+MAX_ARTICLES_PER_FEED   = 10
+MAX_TOTAL_ARTICLES      = 30
+ARTICLE_MAX_AGE_DAYS    = 7
+FETCH_TIMEOUT_SECONDS   = 12
+
+# ─── RSS Feed Definitions ─────────────────────────────────────────────────────
+
+RSS_FEEDS = [
+    {
+        "url": "https://techcrunch.com/feed/",
+        "source": "TechCrunch",
+        "category": "AI",
+    },
+    {
+        "url": "https://www.theverge.com/rss/index.xml",
+        "source": "The Verge",
+        "category": "Tools",
+    },
+    {
+        "url": "https://venturebeat.com/category/ai/feed/",
+        "source": "VentureBeat",
+        "category": "Business",
+    },
+    {
+        "url": "https://www.technologyreview.com/feed/",
+        "source": "MIT Tech Review",
+        "category": "Research",
+    },
+    {
+        "url": "https://export.arxiv.org/rss/cs.AI",
+        "source": "ArXiv CS.AI",
+        "category": "Research",
+    },
+    {
+        "url": "https://www.wired.com/feed/category/artificial-intelligence/latest/rss",
+        "source": "Wired",
+        "category": "AI",
+    },
+    {
+        "url": "https://feeds.feedburner.com/analyticsvidhya",
+        "source": "Analytics Vidhya",
+        "category": "Tools",
+    },
+    {
+        "url": "https://hnrss.org/newest.atom?q=AI+LLM+machine+learning&count=20",
+        "source": "Hacker News",
+        "category": "Developer",
+    },
+]
+
+# ─── AI-Relevance Scoring Keywords ────────────────────────────────────────────
+
+AI_KEYWORDS: list[tuple[list[str], int]] = [
+    (["chatgpt", "gpt-4", "gpt-5", "openai"],    10),
+    (["gemini", "google deepmind", "deepmind"],    10),
+    (["llm", "large language model"],              9),
+    (["claude", "anthropic"],                      9),
+    (["llama", "meta ai"],                         8),
+    (["generative ai", "genai"],                   8),
+    (["artificial intelligence", " ai "],          7),
+    (["machine learning", " ml "],                 7),
+    (["neural network", "transformer"],            7),
+    (["pytorch", "tensorflow", "hugging face"],    7),
+    (["nvidia", "cuda", "gpu", "accelerator"],     6),
+    (["computer vision", "nlp", "speech"],         6),
+    (["robotics", "autonomous"],                   6),
+    (["data science", "deep learning"],            6),
+    (["open source", "open-source"],               5),
+    (["benchmark", "research paper", "arxiv"],     5),
+    (["technology", "tech", "software"],           3),
+    (["developer", "programming", "api"],          3),
+    (["startup", "funding", "raises"],             2),
+]
+
 VALID_CATEGORIES = {
-    "AI", "LLMs", "Research", "Tools", "Business", "Robotics", "Developer", "Student Opportunities"
+    "AI", "LLMs", "Research", "Tools", "Business", "Robotics", "Developer", "Student Opportunities",
 }
-VALID_IMPORTANCE = {"High", "Medium", "Low"}
-VALID_FRESHNESS = {"Today", "Yesterday", "Recent"}
+VALID_IMPORTANCE  = {"High", "Medium", "Low"}
+VALID_FRESHNESS   = {"Today", "Yesterday", "Recent"}
 
-SEARCH_PROMPT = """You are an expert AI research & industry intelligence analyst.
-Search Google for the top 8-12 latest real-world AI and technology news, breakthroughs, models, tool launches, research advancements, and developer/student opportunities from the last 24-72 hours.
+# Royalty-free curated technology photos (Unsplash free license for commercial & editorial use)
+ROYALTY_FREE_CATEGORY_IMAGES: dict[str, str] = {
+    "AI": "https://images.unsplash.com/photo-1677442136019-21780efad99a?auto=format&fit=crop&w=800&q=80",
+    "LLMs": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80",
+    "Research": "https://images.unsplash.com/photo-1507668077129-56e32842fceb?auto=format&fit=crop&w=800&q=80",
+    "Tools": "https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=800&q=80",
+    "Robotics": "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?auto=format&fit=crop&w=800&q=80",
+    "Business": "https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=800&q=80",
+    "Student Opportunities": "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&w=800&q=80",
+    "Developer": "https://images.unsplash.com/photo-1555066931-4365d14bab8c?auto=format&fit=crop&w=800&q=80",
+}
+DEFAULT_ROYALTY_FREE_IMAGE = "https://images.unsplash.com/photo-1620712943543-bcc4688e7485?auto=format&fit=crop&w=800&q=80"
 
-Topics to discover:
-- Generative AI, LLMs, and Multimodal models (Gemini, OpenAI, Anthropic, DeepMind, Meta, Microsoft, etc.)
-- Machine Learning, Computer Vision, NLP, Data Science, and Robotics breakthroughs
-- AI Developer tools, open source frameworks, Hugging Face releases, NVIDIA hardware/software updates
-- Student opportunities, AI grants, competitions, and research updates
+# ─── XML Namespaces ───────────────────────────────────────────────────────────
 
-CRITICAL INSTRUCTIONS:
-1. ONLY return real current news discovered through Google Search. Do NOT invent, hallucinate, or use placeholder data.
-2. Every item MUST have a real, verified source URL (e.g., official blog post, TechCrunch, ArXiv, Wired, The Verge, MIT Tech Review, etc.).
-3. Return ONLY a valid JSON array of objects. Do NOT include markdown commentary outside the JSON.
-
-JSON Schema per item:
-[
-  {
-    "title": "Headline of the news or announcement",
-    "summary": "2-3 sentence factual summary of what was released or discovered",
-    "category": "AI" | "LLMs" | "Research" | "Tools" | "Business" | "Robotics" | "Developer" | "Student Opportunities",
-    "importance": "High" | "Medium" | "Low",
-    "whyItMatters": "Why this matters to developers, engineers, students, or businesses",
-    "publishedAt": "YYYY-MM-DDTHH:MM:SSZ (or null if exact timestamp is unknown)",
-    "sourceName": "Actual name of publisher or organization (e.g. Google DeepMind, OpenAI, TechCrunch)",
-    "sourceUrl": "https://... (real source article URL)",
-    "sourceTitle": "Exact article title or announcement name",
-    "tags": ["AI", "LLMs", "Research"],
-    "freshness": "Today" | "Yesterday" | "Recent"
-  }
-]"""
+NS = {
+    "dc":    "http://purl.org/dc/elements/1.1/",
+    "media": "http://search.yahoo.com/mrss/",
+    "atom":  "http://www.w3.org/2005/Atom",
+    "content": "http://purl.org/rss/1.0/modules/content/",
+}
 
 
-def _clean_json_str(text_content: str) -> str:
-    cleaned = text_content.strip()
-    if "```" in cleaned:
-        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-        cleaned = re.sub(r"\s*```$", "", cleaned)
-    # Find JSON array bracket boundaries if there is surrounding text
-    start = cleaned.find("[")
-    end = cleaned.rfind("]")
-    if start != -1 and end != -1 and end > start:
-        cleaned = cleaned[start : end + 1]
-    return cleaned.strip()
+# ─── Utility Helpers ──────────────────────────────────────────────────────────
+
+def _clean_html(text: str) -> str:
+    """Strip HTML tags and normalise whitespace."""
+    if not text:
+        return ""
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"&nbsp;", " ", text)
+    text = re.sub(r"&amp;", "&", text)
+    text = re.sub(r"&lt;", "<", text)
+    text = re.sub(r"&gt;", ">", text)
+    text = re.sub(r"&quot;", '"', text)
+    text = re.sub(r"&#\d+;", "", text)
+    return " ".join(text.split()).strip()
 
 
-def _normalize_category(cat: str | None) -> str:
-    if not cat:
-        return "AI"
-    cat_clean = cat.strip()
-    for valid in VALID_CATEGORIES:
-        if valid.lower() == cat_clean.lower():
-            return valid
-    if "llm" in cat_clean.lower():
-        return "LLMs"
-    if "research" in cat_clean.lower() or "paper" in cat_clean.lower():
-        return "Research"
-    if "tool" in cat_clean.lower() or "sdk" in cat_clean.lower() or "dev" in cat_clean.lower():
-        return "Tools"
-    if "robot" in cat_clean.lower():
-        return "Robotics"
-    if "student" in cat_clean.lower() or "career" in cat_clean.lower() or "grant" in cat_clean.lower():
-        return "Student Opportunities"
-    if "business" in cat_clean.lower() or "market" in cat_clean.lower() or "enterprise" in cat_clean.lower():
-        return "Business"
-    return "AI"
-
-
-def _normalize_importance(imp: str | None) -> str:
-    if not imp:
-        return "High"
-    imp_clean = imp.strip().capitalize()
-    return imp_clean if imp_clean in VALID_IMPORTANCE else "High"
-
-
-def _normalize_freshness(fresh: str | None) -> str:
-    if not fresh:
-        return "Recent"
-    fresh_clean = fresh.strip().capitalize()
-    return fresh_clean if fresh_clean in VALID_FRESHNESS else "Recent"
-
-
-def _validate_url(url: str | None) -> Optional[str]:
+def _validate_url(url: str | None) -> str | None:
     if not url:
         return None
     url = url.strip()
     try:
-        parsed = urlparse(url)
-        if parsed.scheme in ("http", "https") and parsed.hostname:
+        p = urlparse(url)
+        if p.scheme in ("http", "https") and p.hostname:
             return url
     except Exception:
         pass
     return None
 
 
+def _validate_image_url(url: str | None) -> str | None:
+    """Validate image URL — must be http/https and have an image-like extension or path."""
+    validated = _validate_url(url)
+    if not validated:
+        return None
+    # Skip data URIs / SVG / tiny tracking pixels
+    lower = validated.lower()
+    if lower.startswith("data:") or ".svg" in lower:
+        return None
+    return validated
+
+
+def _normalize_category(cat: str | None, feed_default: str = "AI") -> str:
+    if not cat:
+        return feed_default
+    c = cat.strip()
+    for v in VALID_CATEGORIES:
+        if v.lower() == c.lower():
+            return v
+    if "llm" in c.lower():
+        return "LLMs"
+    if "research" in c.lower() or "paper" in c.lower() or "arxiv" in c.lower():
+        return "Research"
+    if "tool" in c.lower() or "sdk" in c.lower() or "dev" in c.lower():
+        return "Tools"
+    if "robot" in c.lower():
+        return "Robotics"
+    if "student" in c.lower() or "career" in c.lower() or "grant" in c.lower():
+        return "Student Opportunities"
+    if "business" in c.lower() or "market" in c.lower() or "enterprise" in c.lower():
+        return "Business"
+    return feed_default
+
+
+def _ai_relevance_score(title: str, summary: str) -> int:
+    """Return a score (0–100) based on how AI-relevant an article is."""
+    haystack = f"{title} {summary}".lower()
+    score = 0
+    for keywords, weight in AI_KEYWORDS:
+        if any(kw in haystack for kw in keywords):
+            score += weight
+    return min(score, 100)
+
+
+def _importance_from_score(score: int) -> str:
+    if score >= 14:
+        return "High"
+    if score >= 7:
+        return "Medium"
+    return "Low"
+
+
+def _freshness(pub_dt: datetime.datetime | None) -> str:
+    if not pub_dt:
+        return "Recent"
+    now = datetime.datetime.now(datetime.timezone.utc)
+    delta = now - pub_dt
+    if delta.days == 0:
+        return "Today"
+    if delta.days == 1:
+        return "Yesterday"
+    return "Recent"
+
+
+def _why_it_matters(title: str, summary: str, category: str) -> str:
+    """Generate a brief contextual relevance sentence locally — no AI needed."""
+    haystack = f"{title} {summary}".lower()
+    if any(k in haystack for k in ["llm", "large language", "gpt", "gemini", "claude", "llama"]):
+        return "Advances in large language models are reshaping developer workflows, content creation, and enterprise automation."
+    if "research" in haystack or "paper" in haystack or "arxiv" in haystack:
+        return "New research findings often become the foundation for the next generation of AI products and frameworks."
+    if "open source" in haystack or "hugging face" in haystack:
+        return "Open-source AI tools lower the barrier for developers and organisations to build with state-of-the-art models."
+    if "nvidia" in haystack or "gpu" in haystack or "chip" in haystack:
+        return "Hardware improvements directly unlock faster, cheaper AI training and inference at scale."
+    if "robotics" in haystack or "autonomous" in haystack:
+        return "Advances in robotics and autonomy are creating new industries and disrupting physical labour markets."
+    if category in ("Business", "LLMs"):
+        return "This development signals important shifts in the AI industry landscape and competitive dynamics."
+    return "Staying current with AI and technology news is essential for developers, marketers, and business leaders."
+
+
+def _dedup_articles(articles: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove duplicates using URL normalisation and title similarity."""
+    seen_urls:  set[str] = set()
+    seen_hashes: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for art in articles:
+        url = (art.get("source_url") or "").strip().lower().rstrip("/")
+        url = re.sub(r"[?#].*$", "", url)   # strip query/fragment
+        title_hash = hashlib.md5(
+            re.sub(r"\W+", "", (art.get("title") or "").lower()).encode()
+        ).hexdigest()[:12]
+        if url and url in seen_urls:
+            continue
+        if title_hash in seen_hashes:
+            continue
+        if url:
+            seen_urls.add(url)
+        seen_hashes.add(title_hash)
+        unique.append(art)
+    return unique
+
+
+def _is_fresh(pub_dt: datetime.datetime | None, max_age_days: int = ARTICLE_MAX_AGE_DAYS) -> bool:
+    if not pub_dt:
+        return True
+    now = datetime.datetime.now(datetime.timezone.utc)
+    return (now - pub_dt).days <= max_age_days
+
+
+def _parse_date(raw: str | None) -> datetime.datetime | None:
+    if not raw:
+        return None
+    raw = raw.strip()
+    for fmt in (
+        "%a, %d %b %Y %H:%M:%S %z",
+        "%a, %d %b %Y %H:%M:%S GMT",
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%SZ",
+        "%Y-%m-%d",
+    ):
+        try:
+            dt = datetime.datetime.strptime(raw, fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.timezone.utc)
+            return dt
+        except ValueError:
+            continue
+    return None
+
+
+# ─── RSS Parser ───────────────────────────────────────────────────────────────
+
+def _extract_image_from_item(item: ET.Element, ns: dict[str, str]) -> str | None:
+    """Try multiple RSS extension fields to extract an article image."""
+    # <media:content url="...">
+    for mc in item.findall("media:content", ns):
+        url = mc.get("url")
+        if _validate_image_url(url):
+            return url
+
+    # <media:thumbnail url="...">
+    for mt in item.findall("media:thumbnail", ns):
+        url = mt.get("url")
+        if _validate_image_url(url):
+            return url
+
+    # <enclosure url="..." type="image/...">
+    for enc in item.findall("enclosure"):
+        if (enc.get("type") or "").startswith("image/"):
+            url = enc.get("url")
+            if _validate_image_url(url):
+                return url
+
+    # Scrape first <img src="..."> from content:encoded or description
+    for tag in ("content:encoded", "description"):
+        el = item.find(tag, ns) or item.find(tag)
+        text_val = (el.text or "") if el is not None else ""
+        if text_val:
+            m = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', text_val, re.IGNORECASE)
+            if m:
+                url = m.group(1)
+                if _validate_image_url(url):
+                    return url
+    return None
+
+
+def _parse_rss_feed(xml_bytes: bytes, feed_meta: dict[str, str]) -> list[dict[str, Any]]:
+    """Parse both RSS 2.0 and Atom feeds; return list of normalised article dicts."""
+    articles: list[dict[str, Any]] = []
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError as exc:
+        logger.warning("RSS XML parse error for %s: %s", feed_meta["source"], exc)
+        return articles
+
+    # Detect feed type
+    tag = root.tag.lower()
+    is_atom = "atom" in tag or "feed" in tag
+
+    if is_atom:
+        items = root.findall("{http://www.w3.org/2005/Atom}entry")
+        if not items:
+            items = root.findall("entry")
+    else:
+        channel = root.find("channel")
+        items = channel.findall("item") if channel is not None else root.findall("item")
+
+    for item in items[:MAX_ARTICLES_PER_FEED]:
+        try:
+            if is_atom:
+                title_el = item.find("{http://www.w3.org/2005/Atom}title") or item.find("title")
+                link_el  = item.find("{http://www.w3.org/2005/Atom}link")
+                if link_el is None:
+                    link_el = item.find("link")
+                link = link_el.get("href") if link_el is not None else None
+                if not link and link_el is not None:
+                    link = link_el.text
+                summary_el = (
+                    item.find("{http://www.w3.org/2005/Atom}summary") or
+                    item.find("{http://www.w3.org/2005/Atom}content") or
+                    item.find("summary") or
+                    item.find("content")
+                )
+                pub_el = (
+                    item.find("{http://www.w3.org/2005/Atom}published") or
+                    item.find("{http://www.w3.org/2005/Atom}updated") or
+                    item.find("published") or
+                    item.find("updated")
+                )
+                image_url = _extract_image_from_item(item, NS)
+            else:
+                title_el   = item.find("title")
+                link_el    = item.find("link")
+                link       = link_el.text if link_el is not None else None
+                summary_el = item.find("description")
+                pub_el     = item.find("pubDate") or item.find("dc:date", NS)
+                image_url  = _extract_image_from_item(item, NS)
+
+            title   = _clean_html(title_el.text if title_el is not None else "").strip()
+            summary = _clean_html(summary_el.text if summary_el is not None else "").strip()
+            pub_raw = pub_el.text if pub_el is not None else None
+            url     = _validate_url(link.strip() if link else None)
+
+            if not title or not url:
+                continue
+
+            # Limit summary length
+            if len(summary) > 600:
+                summary = summary[:597] + "…"
+            if not summary:
+                summary = title
+
+            pub_dt   = _parse_date(pub_raw)
+            if not _is_fresh(pub_dt):
+                continue
+
+            score    = _ai_relevance_score(title, summary)
+            category = _normalize_category(feed_meta.get("category", "AI"), feed_meta.get("category", "AI"))
+
+            articles.append({
+                "id":           str(uuid.uuid5(uuid.NAMESPACE_URL, url)),
+                "title":        title[:500],
+                "summary":      summary,
+                "source":       feed_meta["source"],
+                "source_url":   url,
+                "source_title": title[:500],
+                "published_at": pub_dt.isoformat() if pub_dt else None,
+                "category":     category,
+                "importance":   _importance_from_score(score),
+                "why_it_matters": _why_it_matters(title, summary, category),
+                "tags_json":    json.dumps([feed_meta["source"], category, "AI"][:10]),
+                "freshness":    _freshness(pub_dt),
+                "relevance_score": score,
+                "image_url":    _validate_image_url(image_url) or ROYALTY_FREE_CATEGORY_IMAGES.get(category, DEFAULT_ROYALTY_FREE_IMAGE),
+            })
+        except Exception as exc:
+            logger.debug("Skipping malformed RSS item: %s", exc)
+            continue
+
+    return articles
+
+
+# ─── HTTP Fetcher ─────────────────────────────────────────────────────────────
+
+async def _fetch_feed(client: httpx.AsyncClient, feed: dict[str, str]) -> list[dict[str, Any]]:
+    try:
+        response = await client.get(
+            feed["url"],
+            timeout=FETCH_TIMEOUT_SECONDS,
+            follow_redirects=True,
+            headers={
+                "User-Agent": "CopyForgeAI/1.0 RSS Reader (+https://copyforge.ai)",
+                "Accept": "application/rss+xml, application/xml, text/xml, */*",
+            },
+        )
+        response.raise_for_status()
+        articles = _parse_rss_feed(response.content, feed)
+        logger.info(
+            "RSS [%s] fetched %d fresh articles from %s",
+            feed["source"], len(articles), feed["url"],
+        )
+        return articles
+    except httpx.TimeoutException:
+        logger.warning("RSS [%s] timed out.", feed["source"])
+    except httpx.HTTPStatusError as exc:
+        logger.warning("RSS [%s] HTTP %s.", feed["source"], exc.response.status_code)
+    except Exception as exc:
+        logger.warning("RSS [%s] fetch failed: %s", feed["source"], exc)
+    return []
+
+
+async def _fetch_all_feeds() -> list[dict[str, Any]]:
+    """Fetch all RSS feeds concurrently and return merged, ranked article list."""
+    async with httpx.AsyncClient() as client:
+        tasks = [_fetch_feed(client, feed) for feed in RSS_FEEDS]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    all_articles: list[dict[str, Any]] = []
+    for result in results:
+        if isinstance(result, list):
+            all_articles.extend(result)
+        elif isinstance(result, Exception):
+            logger.warning("Feed task raised: %s", result)
+
+    # Deduplicate by URL/title
+    unique = _dedup_articles(all_articles)
+
+    # Sort: high relevance first, then newest
+    unique.sort(key=lambda a: (-a["relevance_score"], a.get("published_at") or ""), reverse=False)
+    unique.sort(key=lambda a: a.get("published_at") or "", reverse=True)
+
+    # Keep AI-relevant articles (score >= 2) and limit total
+    filtered = [a for a in unique if a["relevance_score"] >= 2]
+    if not filtered:
+        filtered = unique   # fallback: keep everything if nothing scores
+
+    return filtered[:MAX_TOTAL_ARTICLES]
+
+
+# ─── Service Class ────────────────────────────────────────────────────────────
+
 class TrendService:
     def __init__(self) -> None:
         self._memory_cache: list[dict[str, Any]] = []
-        self._last_fetched_at: Optional[datetime.datetime] = None
-
-    def _require_api_key(self) -> str:
-        if not settings.AI_CONFIGURED:
-            raise RuntimeError("Gemini AI is not configured on the backend. Add GEMINI_API_KEY to environment.")
-        return settings.GEMINI_API_KEY
+        self._last_fetched_at: datetime.datetime | None = None
 
     async def list_trends(self, refresh: bool = False) -> list[dict[str, Any]]:
         now = datetime.datetime.now(datetime.timezone.utc)
-        
-        # Check in-memory cache
+
+        # ── In-memory cache hit ──────────────────────────────────────────────
         if not refresh and self._memory_cache and self._last_fetched_at:
             if (now - self._last_fetched_at).total_seconds() < TREND_CACHE_TTL_SECONDS:
                 return self._memory_cache
 
-        # Check database cache
-        async with get_db() as db:
-            latest = (
-                await db.execute(text("SELECT MAX(retrieved_at) FROM trend_items"))
-            ).scalar_one_or_none()
-            
-            is_stale = not latest
-            if latest:
-                try:
-                    latest_dt = datetime.datetime.fromisoformat(str(latest))
-                    if latest_dt.tzinfo is None:
-                        latest_dt = latest_dt.replace(tzinfo=datetime.timezone.utc)
-                    is_stale = (now - latest_dt).total_seconds() >= TREND_CACHE_TTL_SECONDS
-                except ValueError:
-                    is_stale = True
-
-            if not refresh and not is_stale:
-                rows = (
-                    await db.execute(
-                        text(
-                            """
-                            SELECT id, title, summary, source, source_url,
-                                   published_at, retrieved_at, category, importance,
-                                   why_it_matters, source_title, tags_json, freshness
-                            FROM trend_items
-                            ORDER BY COALESCE(published_at, retrieved_at) DESC
-                            LIMIT 30
-                            """
-                        )
-                    )
-                ).mappings().all()
-                if rows:
-                    items = [self._row_to_trend(dict(r)) for r in rows]
-                    self._memory_cache = items
-                    self._last_fetched_at = now
-                    return items
-
-        # Stale or forced refresh: fetch fresh trends with Google Search grounding
+        # ── Database cache hit ───────────────────────────────────────────────
         try:
-            await self.refresh()
-        except RuntimeError as e:
-            # If search encounters rate limit or network error, return existing DB items if available
+            async with get_db() as db:
+                latest = (
+                    await db.execute(text("SELECT MAX(retrieved_at) FROM trend_items"))
+                ).scalar_one_or_none()
+
+                is_stale = not latest
+                if latest:
+                    try:
+                        latest_dt = datetime.datetime.fromisoformat(str(latest))
+                        if latest_dt.tzinfo is None:
+                            latest_dt = latest_dt.replace(tzinfo=datetime.timezone.utc)
+                        is_stale = (now - latest_dt).total_seconds() >= TREND_CACHE_TTL_SECONDS
+                    except ValueError:
+                        is_stale = True
+
+                if not refresh and not is_stale:
+                    rows = (
+                        await db.execute(
+                            text("""
+                                SELECT id, title, summary, source, source_url,
+                                       published_at, retrieved_at, category, importance,
+                                       why_it_matters, source_title, tags_json, freshness, image_url
+                                FROM trend_items
+                                ORDER BY COALESCE(published_at, retrieved_at) DESC
+                                LIMIT 30
+                            """)
+                        )
+                    ).mappings().all()
+                    if rows:
+                        items = [self._row_to_trend(dict(r)) for r in rows]
+                        self._memory_cache = items
+                        self._last_fetched_at = now
+                        return items
+        except Exception as exc:
+            logger.warning("DB cache read failed, refreshing from RSS: %s", exc)
+
+        # ── Fetch fresh articles from RSS ────────────────────────────────────
+        try:
+            count = await self.refresh()
+            if count == 0:
+                logger.warning("RSS returned 0 articles; serving stale DB cache if available.")
+        except Exception as exc:
+            logger.warning("RSS refresh error: %s", exc)
+
+        try:
             async with get_db() as db:
                 rows = (
                     await db.execute(
-                        text(
-                            """
+                        text("""
                             SELECT id, title, summary, source, source_url,
                                    published_at, retrieved_at, category, importance,
-                                   why_it_matters, source_title, tags_json, freshness
+                                   why_it_matters, source_title, tags_json, freshness, image_url
                             FROM trend_items
                             ORDER BY COALESCE(published_at, retrieved_at) DESC
                             LIMIT 30
-                            """
-                        )
+                        """)
                     )
                 ).mappings().all()
-            if rows:
-                logger.warning("Returning cached trends due to refresh error: %s", e)
-                items = [self._row_to_trend(dict(r)) for r in rows]
-                self._memory_cache = items
-                return items
-            raise
+            items = [self._row_to_trend(dict(r)) for r in rows]
+        except Exception as exc:
+            logger.error("DB read failed after RSS refresh: %s", exc)
+            items = self._memory_cache   # serve stale in-memory cache
 
-        async with get_db() as db:
-            rows = (
-                await db.execute(
-                    text(
-                        """
-                        SELECT id, title, summary, source, source_url,
-                               published_at, retrieved_at, category, importance,
-                               why_it_matters, source_title, tags_json, freshness
-                        FROM trend_items
-                        ORDER BY COALESCE(published_at, retrieved_at) DESC
-                        LIMIT 30
-                        """
-                    )
-                )
-            ).mappings().all()
-        items = [self._row_to_trend(dict(r)) for r in rows]
         self._memory_cache = items
         self._last_fetched_at = now
         return items
 
+    async def refresh(self) -> int:
+        """Fetch all RSS feeds, score, dedup, and persist to DB. Returns saved count."""
+        retrieved_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        articles = await _fetch_all_feeds()
+
+        if not articles:
+            logger.warning("All RSS feeds returned 0 articles.")
+            return 0
+
+        saved = 0
+        async with get_db() as db:
+            for art in articles:
+                try:
+                    await db.execute(
+                        text("""
+                            INSERT INTO trend_items (
+                                id, title, summary, source, source_url,
+                                published_at, retrieved_at, category, importance,
+                                why_it_matters, source_title, tags_json, freshness, image_url
+                            ) VALUES (
+                                :id, :title, :summary, :source, :source_url,
+                                :published_at, :retrieved_at, :category, :importance,
+                                :why_it_matters, :source_title, :tags_json, :freshness, :image_url
+                            )
+                            ON CONFLICT(source_url) DO UPDATE SET
+                                title         = excluded.title,
+                                summary       = excluded.summary,
+                                published_at  = excluded.published_at,
+                                retrieved_at  = excluded.retrieved_at,
+                                category      = excluded.category,
+                                importance    = excluded.importance,
+                                why_it_matters= excluded.why_it_matters,
+                                source_title  = excluded.source_title,
+                                tags_json     = excluded.tags_json,
+                                freshness     = excluded.freshness,
+                                image_url     = excluded.image_url
+                        """),
+                        {
+                            "id":            art["id"],
+                            "title":         art["title"],
+                            "summary":       art["summary"],
+                            "source":        art["source"],
+                            "source_url":    art["source_url"],
+                            "published_at":  art.get("published_at"),
+                            "retrieved_at":  retrieved_at,
+                            "category":      art["category"],
+                            "importance":    art["importance"],
+                            "why_it_matters":art.get("why_it_matters", ""),
+                            "source_title":  art.get("source_title", art["title"]),
+                            "tags_json":     art.get("tags_json", "[]"),
+                            "freshness":     art.get("freshness", "Recent"),
+                            "image_url":     art.get("image_url"),
+                        },
+                    )
+                    saved += 1
+                except Exception as exc:
+                    logger.warning("Failed to upsert article %s: %s", art.get("source_url"), exc)
+
+        self._memory_cache = [self._row_to_trend(a) for a in articles]
+        self._last_fetched_at = datetime.datetime.now(datetime.timezone.utc)
+        logger.info("RSS refresh complete: %d articles saved.", saved)
+        return saved
+
     def _row_to_trend(self, row: dict[str, Any]) -> dict[str, Any]:
-        tags = []
+        tags: list[str] = []
         tags_raw = row.get("tags_json")
         if tags_raw:
             try:
@@ -228,169 +646,47 @@ class TrendService:
                 tags = []
 
         return {
-            "id": row.get("id"),
-            "title": row.get("title"),
-            "summary": row.get("summary"),
-            "category": row.get("category") or "AI",
-            "importance": row.get("importance") or "High",
-            "whyItMatters": row.get("why_it_matters") or "",
+            "id":          row.get("id"),
+            "title":       row.get("title"),
+            "summary":     row.get("summary"),
+            "category":    row.get("category") or "AI",
+            "importance":  row.get("importance") or "High",
+            "whyItMatters":row.get("why_it_matters") or "",
             "publishedAt": row.get("published_at"),
             "retrievedAt": row.get("retrieved_at"),
-            "sourceName": row.get("source") or "Web Intelligence",
-            "sourceUrl": row.get("source_url"),
+            "sourceName":  row.get("source") or "Tech News",
+            "sourceUrl":   row.get("source_url"),
             "sourceTitle": row.get("source_title") or row.get("title"),
-            "tags": tags if isinstance(tags, list) else [],
-            "freshness": row.get("freshness") or "Recent",
-            # Compatibility fields
-            "source": row.get("source") or "Web Intelligence",
-            "source_url": row.get("source_url"),
-            "published_at": row.get("published_at"),
-            "retrieved_at": row.get("retrieved_at"),
+            "tags":        tags if isinstance(tags, list) else [],
+            "freshness":   row.get("freshness") or "Recent",
+            "image_url":   row.get("image_url") or ROYALTY_FREE_CATEGORY_IMAGES.get(row.get("category") or "AI", DEFAULT_ROYALTY_FREE_IMAGE),
+            # backward-compat fields
+            "source":      row.get("source") or "Tech News",
+            "source_url":  row.get("source_url"),
+            "published_at":row.get("published_at"),
+            "retrieved_at":row.get("retrieved_at"),
         }
 
-    async def _call_gemini_search(self, api_key: str | None = None) -> dict[str, Any]:
-        response = await gemini_service.generate_content_response(
-            SEARCH_PROMPT,
-            tools=[types.Tool(google_search=types.GoogleSearch())],
-        )
-        return response.model_dump(mode="json", by_alias=True, exclude_none=True)
 
-    def _parse_search_results(self, data: dict[str, Any], retrieved_at: str) -> list[dict[str, Any]]:
-        candidates = data.get("candidates") or []
-        if not candidates:
-            raise RuntimeError("No recent AI trends were found. Try refreshing.")
-
-        first_cand = candidates[0]
-        content = first_cand.get("content") or {}
-        parts = content.get("parts") or []
-        text_content = "".join(p.get("text", "") for p in parts if isinstance(p, dict))
-        if not text_content.strip():
-            raise RuntimeError("The AI trend discovery model returned an empty response.")
-
-        cleaned_json = _clean_json_str(text_content)
-        try:
-            raw_items = json.loads(cleaned_json)
-        except json.JSONDecodeError as err:
-            logger.error("Failed to parse JSON from Gemini search response: %s. Raw was: %s", err, text_content[:400])
-            raise RuntimeError("Live web search returned unexpected data format. Please retry.") from err
-
-        if not isinstance(raw_items, list):
-            raise RuntimeError("AI trend response format error: expected a list of trend items.")
-
-        # Extract grounding metadata chunks for source verification
-        grounding_metadata = first_cand.get("groundingMetadata") or {}
-        grounding_chunks = grounding_metadata.get("groundingChunks") or []
-        grounding_urls = []
-        for chunk in grounding_chunks:
-            web = chunk.get("web") or {}
-            uri = web.get("uri")
-            if uri:
-                grounding_urls.append((uri, web.get("title") or "Verified Web Source"))
-
-        processed_items: list[dict[str, Any]] = []
-        for idx, item in enumerate(raw_items):
-            if not isinstance(item, dict):
-                continue
-            title = str(item.get("title") or "").strip()
-            summary = str(item.get("summary") or "").strip()
-            if not title or not summary:
-                continue
-
-            source_url = _validate_url(item.get("sourceUrl") or item.get("source_url"))
-            source_name = str(item.get("sourceName") or item.get("source") or "").strip()
-
-            # If URL is missing, match with grounding URLs if available
-            if not source_url and grounding_urls:
-                fallback_idx = idx % len(grounding_urls)
-                source_url, matched_title = grounding_urls[fallback_idx]
-                if not source_name or source_name.lower() in ("source", "web", "url"):
-                    source_name = matched_title
-
-            if not source_url:
-                continue
-
-            if not source_name:
-                parsed_host = urlparse(source_url).hostname or "Tech News"
-                source_name = parsed_host.removeprefix("www.")
-
-            item_id = str(uuid.uuid5(uuid.NAMESPACE_URL, source_url))
-            category = _normalize_category(item.get("category"))
-            importance = _normalize_importance(item.get("importance"))
-            freshness = _normalize_freshness(item.get("freshness"))
-            why_it_matters = str(item.get("whyItMatters") or item.get("why_it_matters") or "").strip()
-            source_title = str(item.get("sourceTitle") or item.get("source_title") or title).strip()
-            
-            raw_tags = item.get("tags")
-            tags = [str(t).strip() for t in raw_tags if str(t).strip()] if isinstance(raw_tags, list) else ["AI", category]
-            if not tags:
-                tags = ["AI", category]
-
-            published_at = item.get("publishedAt") or item.get("published_at")
-            if published_at:
-                published_at = str(published_at).strip()
-
-            processed_items.append({
-                "id": item_id,
-                "title": title[:500],
-                "summary": summary[:5000],
-                "source": source_name[:100],
-                "source_url": source_url[:2000],
-                "published_at": published_at,
-                "retrieved_at": retrieved_at,
-                "category": category,
-                "importance": importance,
-                "why_it_matters": why_it_matters[:5000],
-                "source_title": source_title[:500],
-                "tags_json": json.dumps(tags[:10]),
-                "freshness": freshness,
-            })
-
-        if not processed_items:
-            raise RuntimeError("No valid AI trend articles could be verified from web search.")
-
-        return processed_items
-
-    async def refresh(self) -> int:
-        api_key = self._require_api_key()
-        retrieved_at = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        
-        gemini_response = await self._call_gemini_search(api_key)
-        trend_records = self._parse_search_results(gemini_response, retrieved_at)
-
-        async with get_db() as db:
-            for item in trend_records:
-                await db.execute(
-                    text(
-                        """
-                        INSERT INTO trend_items (
-                            id, title, summary, source, source_url,
-                            published_at, retrieved_at, category, importance,
-                            why_it_matters, source_title, tags_json, freshness
-                        ) VALUES (
-                            :id, :title, :summary, :source, :source_url,
-                            :published_at, :retrieved_at, :category, :importance,
-                            :why_it_matters, :source_title, :tags_json, :freshness
-                        )
-                        ON CONFLICT(source_url) DO UPDATE SET
-                            title = excluded.title,
-                            summary = excluded.summary,
-                            source = excluded.source,
-                            published_at = excluded.published_at,
-                            retrieved_at = excluded.retrieved_at,
-                            category = excluded.category,
-                            importance = excluded.importance,
-                            why_it_matters = excluded.why_it_matters,
-                            source_title = excluded.source_title,
-                            tags_json = excluded.tags_json,
-                            freshness = excluded.freshness
-                        """
-                    ),
-                    item,
-                )
-
-        self._memory_cache = [self._row_to_trend(r) for r in trend_records]
-        self._last_fetched_at = datetime.datetime.now(datetime.timezone.utc)
-        return len(trend_records)
-
+# ─── Module-level singleton ───────────────────────────────────────────────────
 
 trend_service = TrendService()
+
+
+# ─── Utility exports used by tests ───────────────────────────────────────────
+
+def _clean_json_str(text_content: str) -> str:
+    """Kept for test compatibility (previously used for Gemini JSON parsing)."""
+    import re as _re
+    cleaned = text_content.strip()
+    if "```" in cleaned:
+        cleaned = _re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = _re.sub(r"\s*```$", "", cleaned)
+    start = cleaned.find("[")
+    end   = cleaned.rfind("]")
+    if start != -1 and end != -1 and end > start:
+        cleaned = cleaned[start : end + 1]
+    return cleaned.strip()
+
+
+# _normalize_category is defined above as a module-level function; tests can import it directly.

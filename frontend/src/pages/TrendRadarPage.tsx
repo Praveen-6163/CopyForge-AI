@@ -208,7 +208,7 @@ export const TrendRadarPage: React.FC<TrendRadarPageProps> = ({ onCreatePost }) 
             AI Trend Radar
           </h1>
           <p className="text-sm md:text-base text-slate-300 max-w-2xl leading-relaxed">
-            Real-time AI and technology intelligence grounded in Google Search. Discover verified model releases, research breakthroughs, and developer news to turn into high-converting copy.
+            Live AI &amp; technology news sourced from TechCrunch, VentureBeat, MIT Tech Review, The Verge, ArXiv, and more. Discover the latest breakthroughs and turn them into high-converting LinkedIn copy.
           </p>
         </div>
 
@@ -242,9 +242,7 @@ export const TrendRadarPage: React.FC<TrendRadarPageProps> = ({ onCreatePost }) 
           <div className="space-y-1">
             <p className="font-semibold">{error}</p>
             <p className="text-xs text-rose-300/80">
-              {error.includes('configured')
-                ? 'Ensure GEMINI_API_KEY is configured in your backend environment variables on Render.'
-                : 'Click "Refresh Trends" or retry in a moment.'}
+              {'Click "Refresh Trends" to retry fetching the latest articles.'}
             </p>
           </div>
         </div>
@@ -365,9 +363,21 @@ export const TrendRadarPage: React.FC<TrendRadarPageProps> = ({ onCreatePost }) 
                 <article
                   key={trend.id}
                   onClick={() => setSelectedTrend(trend)}
-                  className="group rounded-2xl p-6 border border-white/[0.08] bg-gradient-to-b from-slate-900/90 to-slate-950/90 hover:border-indigo-500/40 hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-200 flex flex-col justify-between gap-5 cursor-pointer relative"
+                  className="group rounded-2xl border border-white/[0.08] bg-gradient-to-b from-slate-900/90 to-slate-950/90 hover:border-indigo-500/40 hover:shadow-xl hover:shadow-indigo-500/5 transition-all duration-200 flex flex-col justify-between cursor-pointer relative overflow-hidden"
                 >
-                  <div className="space-y-3.5">
+                  {trend.image_url && (
+                    <div className="w-full h-36 overflow-hidden bg-slate-800/60 flex-shrink-0">
+                      <img
+                        src={trend.image_url}
+                        alt={trend.title}
+                        loading="lazy"
+                        onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none'; }}
+                        className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity duration-300"
+                      />
+                    </div>
+                  )}
+                  <div className="p-6 flex flex-col gap-5 flex-1">
+                    <div className="space-y-3.5">
                     {/* Badges and timestamp */}
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <div className="flex items-center gap-2">
@@ -452,6 +462,7 @@ export const TrendRadarPage: React.FC<TrendRadarPageProps> = ({ onCreatePost }) 
                       </Button>
                     </div>
                   </div>
+                  </div>{/* /inner padding div */}
                 </article>
               );
             })}
@@ -499,6 +510,18 @@ export const TrendRadarPage: React.FC<TrendRadarPageProps> = ({ onCreatePost }) 
 
             {/* Modal Content */}
             <div className="space-y-4 text-slate-300 text-sm leading-relaxed">
+              {/* Article Image */}
+              {selectedTrend.image_url && (
+                <div className="w-full h-48 rounded-xl overflow-hidden bg-slate-800/60">
+                  <img
+                    src={selectedTrend.image_url}
+                    alt={selectedTrend.title}
+                    loading="lazy"
+                    onError={(e) => { (e.currentTarget.parentElement as HTMLElement).style.display = 'none'; }}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
               <div>
                 <h4 className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-1.5 font-semibold">
                   Executive Summary

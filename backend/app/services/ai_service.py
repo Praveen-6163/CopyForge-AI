@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import re
@@ -153,7 +154,39 @@ What are your thoughts on using AI to elevate {clean_name}? Share your insights 
 
 
 class AIService:
-    """Server-side text generation through Google Gemini with local fallback protection."""
+    """Server-side text generation through Google Gemini with local fallback protection.
+
+    Generated content is cached in-memory for up to CONTENT_CACHE_TTL_SECONDS so that
+    repeated requests for the same topic/platform/tone do not consume Gemini quota.
+    """
+
+    CONTENT_CACHE_TTL_SECONDS: int = 30 * 60   # 30 minutes
+    _cache: Dict[str, Tuple[Dict[str, Any], str, float]] = {}  # key -> (result, prompt, timestamp)
+
+    @staticmethod
+    def _cache_key(**kwargs: Any) -> str:
+        serialised = json.dumps(kwargs, sort_keys=True, default=str)
+        return hashlib.sha256(serialised.encode()).hexdigest()
+
+    def _get_cached(self, key: str) -> Tuple[Dict[str, Any], str] | None:
+        import time
+        entry = self._cache.get(key)
+        if entry is None:
+            return None
+        result, prompt, ts = entry
+        if time.time() - ts > self.CONTENT_CACHE_TTL_SECONDS:
+            del self._cache[key]
+            return None
+        logger.info("Gemini content cache HIT for key %s", key[:12])
+        return result, prompt
+
+    def _set_cached(self, key: str, result: Dict[str, Any], prompt: str) -> None:
+        import time
+        # Keep cache from growing unbounded (max 200 entries)
+        if len(self._cache) >= 200:
+            oldest = min(self._cache.items(), key=lambda kv: kv[1][2])
+            del self._cache[oldest[0]]
+        self._cache[key] = (result, prompt, time.time())
 
     def _require_provider(self) -> None:
         if not settings.AI_CONFIGURED:
@@ -185,6 +218,20 @@ class AIService:
         )
         compiled_prompt = f"System: {system_prompt[:250]}...\n\nUser: {user_prompt}"
 
+        # ── Cache lookup ─────────────────────────────────────────────────────
+        cache_key = self._cache_key(
+            product_name=product_name,
+            product_description=product_description,
+            platform=platform,
+            tone=tone,
+            audience=audience,
+            objective=objective,
+            content_type=content_type,
+        )
+        cached = self._get_cached(cache_key)
+        if cached:
+            return cached
+
         if not settings.AI_CONFIGURED:
             logger.warning("Gemini API key not configured. Using local fallback generator.")
             fallback = generate_local_fallback(
@@ -210,6 +257,7 @@ class AIService:
                 },
             )
             generated_content = _parse_generated_content(raw_result, platform=platform)
+            self._set_cached(cache_key, generated_content, compiled_prompt)
             return generated_content, compiled_prompt
         except Exception as first_error:
             logger.warning(
@@ -229,6 +277,7 @@ class AIService:
                 },
             )
             generated_content = _parse_generated_content(raw_text, platform=platform)
+            self._set_cached(cache_key, generated_content, compiled_prompt)
             return generated_content, compiled_prompt
         except Exception as second_error:
             logger.warning(

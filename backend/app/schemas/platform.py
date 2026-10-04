@@ -58,6 +58,7 @@ class TrendItemResponse(BaseModel):
     sourceTitle: str | None = None
     tags: list[str] = Field(default_factory=list)
     freshness: Literal["Today", "Yesterday", "Recent"] = "Recent"
+    image_url: str | None = None
     # Backwards compatibility fields:
     source: str | None = None
     source_url: str | None = None
