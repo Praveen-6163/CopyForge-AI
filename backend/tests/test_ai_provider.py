@@ -1,11 +1,10 @@
-import json
 import pytest
 from fastapi.testclient import TestClient
-import httpx
 
 from app.core.config import settings
 from app.main import app
 from app.services.ai_service import ai_service, AIProviderError, AIProviderNotConfigured
+from app.services.gemini_service import gemini_service
 
 
 def test_ai_provider_status_unconfigured(monkeypatch):
@@ -30,6 +29,7 @@ def test_ai_provider_status_unconfigured(monkeypatch):
 
 def test_ai_provider_status_configured(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-gemini-api-key-12345")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.8-flash")
     
     assert settings.AI_CONFIGURED is True
     assert settings.AI_PROVIDER == "Gemini"
@@ -46,7 +46,7 @@ def test_ai_provider_status_configured(monkeypatch):
         health_data = health_res.json()
         assert health_data["ai_configured"] is True
         assert health_data["ai_provider"] == "Gemini"
-        assert health_data["ai_model"] == "gemini-2.5-flash"
+        assert health_data["ai_model"] == "gemini-3.8-flash"
 
 
 @pytest.mark.anyio
@@ -70,32 +70,20 @@ async def test_ai_service_requires_provider_when_unconfigured(monkeypatch):
 async def test_ai_service_generates_content_with_gemini(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-key-123")
 
-    mock_gemini_payload = {
-        "candidates": [
-            {
-                "content": {
-                    "parts": [
-                        {
-                            "text": json.dumps({
-                                "content": "Unlock high conversions with automated copy.",
-                                "hook": "Stop wasting hours writing copy.",
-                                "cta": "Try CopyForge today.",
-                                "hashtags": ["#AI", "#Copywriting", "#Marketing"],
-                                "image_prompt": "A modern sleek dashboard displaying AI marketing insights."
-                            })
-                        }
-                    ],
-                    "role": "model"
-                },
-                "finishReason": "STOP"
-            }
-        ]
-    }
+    async def mock_generate_structured_content(self, prompt, **kwargs):
+        return {
+            "content": "Unlock high conversions with automated copy.",
+            "hook": "Stop wasting hours writing copy.",
+            "cta": "Try CopyForge today.",
+            "hashtags": ["#AI", "#Copywriting", "#Marketing"],
+            "image_prompt": "A modern sleek dashboard displaying AI marketing insights.",
+        }
 
-    async def mock_post_gemini(self, payload):
-        return mock_gemini_payload
-
-    monkeypatch.setattr(ai_service, "_post_gemini", mock_post_gemini.__get__(ai_service, ai_service.__class__))
+    monkeypatch.setattr(
+        gemini_service,
+        "generate_structured_content",
+        mock_generate_structured_content.__get__(gemini_service, type(gemini_service)),
+    )
 
     content, prompt = await ai_service.generate_text(
         product_name="CopyForge AI",
@@ -117,17 +105,18 @@ async def test_ai_service_generates_content_with_gemini(monkeypatch):
 async def test_ai_service_handles_auth_error(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "invalid-key")
 
-    def mock_handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(401, json={"error": {"code": 401, "message": "API key not valid."}})
+    async def mock_generate_structured_content(self, prompt, **kwargs):
+        raise AIProviderError(
+            "Gemini API key is invalid or unavailable. Please check the backend environment configuration.",
+            status_code=503,
+            error_type="INVALID_CREDENTIALS",
+        )
 
-    transport = httpx.MockTransport(mock_handler)
-    real_async_client = httpx.AsyncClient
-
-    def client_factory(*args, **kwargs):
-        kwargs["transport"] = transport
-        return real_async_client(*args, **kwargs)
-
-    monkeypatch.setattr(httpx, "AsyncClient", client_factory)
+    monkeypatch.setattr(
+        gemini_service,
+        "generate_structured_content",
+        mock_generate_structured_content.__get__(gemini_service, type(gemini_service)),
+    )
 
     with pytest.raises(AIProviderError) as exc_info:
         await ai_service.generate_text(
@@ -138,4 +127,4 @@ async def test_ai_service_handles_auth_error(monkeypatch):
             audience="Developers",
             objective="Product promotion",
         )
-    assert "credentials were rejected" in str(exc_info.value)
+    assert "Gemini API key is invalid or unavailable" in str(exc_info.value)

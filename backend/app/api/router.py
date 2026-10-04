@@ -148,9 +148,9 @@ async def _generate_for_user(req: GenerateRequest, user_id: str) -> GenerationRe
             image_prompt=generated["image_prompt"],
         )
     except AIProviderNotConfigured as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
     except AIProviderError as error:
-        raise HTTPException(status_code=502, detail=str(error)) from error
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
     except HTTPException:
         raise
     except SQLAlchemyError:
@@ -227,9 +227,9 @@ async def improve_content(
             validation_result=validation_result,
         )
     except AIProviderNotConfigured as error:
-        raise HTTPException(status_code=503, detail=str(error)) from error
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
     except AIProviderError as error:
-        raise HTTPException(status_code=502, detail=str(error)) from error
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
     except HTTPException:
         raise
     except SQLAlchemyError:

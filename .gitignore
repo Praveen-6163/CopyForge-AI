@@ -19,6 +19,8 @@ backend/copyforge.db
 
 # Environment variables
 .env
+.env.*
+!.env.example
 backend/.env
 frontend/.env
 *.local

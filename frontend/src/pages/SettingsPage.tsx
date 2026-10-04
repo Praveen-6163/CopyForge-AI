@@ -82,7 +82,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({ health }) => {
             </p>
             <p className="text-xs text-slate-300 mt-2">
               {health?.ai_configured
-                ? `${health.ai_provider || 'Gemini'} (${health.ai_model || health.openai_model || 'gemini-2.5-flash'}) is configured on the backend.`
+                ? `${health.ai_provider || 'Gemini'} (${health.ai_model || health.openai_model || 'gemini-3.8-flash'}) is configured on the backend.`
                 : 'Configure GEMINI_API_KEY in the Render backend environment. Never add provider secrets to frontend settings.'}
             </p>
           </div>

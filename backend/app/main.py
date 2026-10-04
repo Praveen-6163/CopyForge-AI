@@ -9,6 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 from app.database.db import check_database_connection
+from app.api.ai import router as ai_router
 from app.api.router import router
 from app.api.linkedin import router as linkedin_router
 from app.api.instagram import router as instagram_router
@@ -80,6 +81,7 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(ai_router)
 app.include_router(linkedin_router)
 app.include_router(instagram_router)
 app.include_router(platform_router)

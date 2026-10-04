@@ -16,7 +16,7 @@ class Settings:
 
     @property
     def GEMINI_MODEL(self) -> str:
-        return os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip()
+        return os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
 
     @property
     def GEMINI_IMAGE_MODEL(self) -> str:

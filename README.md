@@ -25,7 +25,7 @@ Configure these values as backend environment variables. Do not add secrets to f
 | `LINKEDIN_CLIENT_SECRET` | LinkedIn OAuth application secret. |
 | `LINKEDIN_REDIRECT_URI` | `https://copyforge-ai-backend.onrender.com/auth/linkedin/callback` |
 | `GEMINI_API_KEY` | Server-side content and image generation credentials (Google Gemini). |
-| `GEMINI_MODEL` | Text-generation model; defaults to `gemini-2.5-flash`. |
+| `GEMINI_MODEL` | Text-generation model; defaults to `gemini-3.8-flash`. |
 | `GEMINI_IMAGE_MODEL` | Image-generation model; defaults to `imagen-3.0-generate-002`. |
 | `META_APP_ID` | Meta application ID for Instagram Business Login. |
 | `META_APP_SECRET` | Meta application secret. |

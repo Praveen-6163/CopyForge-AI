@@ -1,18 +1,17 @@
-import asyncio
 import datetime
 import json
 import logging
-import random
 import re
 import uuid
 from urllib.parse import urlparse
 from typing import Any, Dict, List, Optional
 
-import httpx
+from google.genai import types
 from sqlalchemy import text
 
 from app.core.config import settings
 from app.database.db import get_db
+from app.services.gemini_service import gemini_service
 
 logger = logging.getLogger("copyforge.trends")
 
@@ -249,67 +248,12 @@ class TrendService:
             "retrieved_at": row.get("retrieved_at"),
         }
 
-    async def _call_gemini_search(self, api_key: str) -> dict[str, Any]:
-        candidate_models = [
-            settings.GEMINI_MODEL,
-            "gemini-3.8-flash",
-            "gemini-3.7-flash",
-            "gemini-3.5-flash",
-            "gemini-2.5-flash",
-        ]
-        # Deduplicate while preserving order
-        models_to_try = list(dict.fromkeys(candidate_models))
-
-        headers = {
-            "x-goog-api-key": api_key,
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": SEARCH_PROMPT}],
-                }
-            ],
-            "tools": [{"googleSearch": {}}],
-        }
-
-        last_error = "Unable to connect to the Gemini service."
-
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            for model_name in models_to_try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
-                for attempt in range(1, 4):
-                    try:
-                        response = await client.post(url, headers=headers, json=payload)
-                        if response.status_code == 200:
-                            return response.json()
-                        if response.status_code in (401, 403):
-                            raise RuntimeError("The configured Gemini API key was rejected.")
-                        if response.status_code == 429:
-                            if attempt == 3:
-                                raise RuntimeError("Gemini request limit reached. Please try again later.")
-                            await asyncio.sleep(2 ** (attempt - 1) + random.uniform(0.3, 0.8))
-                            continue
-                        if response.status_code == 404:
-                            logger.info("Model %s returned 404, falling back to next available model.", model_name)
-                            break
-                        if response.status_code >= 500:
-                            if attempt == 3:
-                                break
-                            await asyncio.sleep(2 ** (attempt - 1) + random.uniform(0.2, 0.5))
-                            continue
-                        last_error = f"Gemini API returned status {response.status_code}: {response.text[:200]}"
-                        break
-                    except (httpx.ConnectError, httpx.TimeoutException) as conn_err:
-                        if attempt == 3:
-                            last_error = f"Connection timeout: {conn_err}"
-                            break
-                        await asyncio.sleep(2 ** (attempt - 1) + random.uniform(0.2, 0.5))
-                    except RuntimeError:
-                        raise
-
-        raise RuntimeError(f"Live web search is temporarily unavailable. {last_error}")
+    async def _call_gemini_search(self, api_key: str | None = None) -> dict[str, Any]:
+        response = await gemini_service.generate_content_response(
+            SEARCH_PROMPT,
+            tools=[types.Tool(google_search=types.GoogleSearch())],
+        )
+        return response.model_dump(mode="json", by_alias=True, exclude_none=True)
 
     def _parse_search_results(self, data: dict[str, Any], retrieved_at: str) -> list[dict[str, Any]]:
         candidates = data.get("candidates") or []

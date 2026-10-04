@@ -108,6 +108,6 @@ class HealthResponse(BaseModel):
     tagline: str
     version: str
     ai_provider: Optional[str] = "Gemini"
-    ai_model: Optional[str] = "gemini-2.5-flash"
-    openai_model: Optional[str] = "gemini-2.5-flash"
+    ai_model: Optional[str] = "gemini-3.8-flash"
+    openai_model: Optional[str] = "gemini-3.8-flash"
     ai_configured: bool

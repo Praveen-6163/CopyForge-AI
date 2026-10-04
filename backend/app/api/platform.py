@@ -7,7 +7,6 @@ import re
 import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from sqlalchemy import text
@@ -23,6 +22,7 @@ from app.schemas.platform import (
     TrendItemResponse,
 )
 from app.services.ai_service import AIProviderNotConfigured, ai_service
+from app.services.gemini_service import AIProviderError, gemini_service
 from app.services.history_service import history_service
 from app.services.publishing import PublishingError, publish_post
 from app.services.trend_service import trend_service
@@ -534,11 +534,6 @@ async def refresh_trends():
 
 
 async def _create_image_asset(user_id: str, prompt: str, aspect_ratio: str) -> str:
-    if not settings.AI_CONFIGURED:
-        raise ImageProviderError(
-            "Image generation is not configured. Add GEMINI_API_KEY to the backend environment.",
-            status_code=503,
-        )
     aspect_ratio_map = {
         "1:1": "1:1",
         "16:9": "16:9",
@@ -547,52 +542,13 @@ async def _create_image_asset(user_id: str, prompt: str, aspect_ratio: str) -> s
         "9:16": "9:16",
     }
     target_aspect = aspect_ratio_map.get(aspect_ratio, "1:1")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_IMAGE_MODEL}:predict"
-    headers = {
-        "x-goog-api-key": settings.GEMINI_API_KEY,
-        "Content-Type": "application/json",
-    }
-    payload = {
-        "instances": [{"prompt": prompt}],
-        "parameters": {
-            "sampleCount": 1,
-            "aspectRatio": target_aspect,
-            "outputOptions": {"mimeType": "image/png"},
-        },
-    }
     try:
-        async with httpx.AsyncClient(timeout=90.0) as client:
-            response = await client.post(url, headers=headers, json=payload)
-            if response.status_code in (401, 403):
-                raise ImageProviderError(
-                    "The configured image provider credentials were rejected.", status_code=503
-                )
-            if response.status_code != 200:
-                logger.warning("The image provider returned status %s: %s", response.status_code, response.text[:200])
-                raise ImageProviderError(
-                    "Image generation failed. Check provider availability and retry.", status_code=502
-                )
-            data = response.json()
-    except ImageProviderError:
-        raise
-    except httpx.RequestError as error:
-        logger.warning("The image provider could not be reached: %s", error)
-        raise ImageProviderError(
-            "Image generation failed. Check provider availability and retry.", status_code=502
-        ) from error
-    except Exception as error:
-        logger.exception("Unexpected error during image generation.")
-        raise ImageProviderError(
-            "Image generation failed. Check provider availability and retry.", status_code=502
-        ) from error
-
-    predictions = data.get("predictions") or []
-    image_data = None
-    if predictions and isinstance(predictions[0], dict):
-        image_data = predictions[0].get("bytesBase64Encoded")
-
-    if not image_data:
-        raise ImageProviderError("The image provider returned no image.")
+        image_data, mime_type = await gemini_service.generate_image(
+            prompt,
+            aspect_ratio=target_aspect,
+        )
+    except AIProviderError as error:
+        raise ImageProviderError(str(error), status_code=error.status_code) from error
     asset_id = str(uuid.uuid4())
     created_at = _now().isoformat()
     async with get_db() as db:
@@ -600,13 +556,14 @@ async def _create_image_asset(user_id: str, prompt: str, aspect_ratio: str) -> s
             text(
                 """
                 INSERT INTO image_assets (id, user_id, prompt, mime_type, image_data, created_at)
-                VALUES (:id, :user_id, :prompt, 'image/png', :image_data, :created_at)
+                VALUES (:id, :user_id, :prompt, :mime_type, :image_data, :created_at)
                 """
             ),
             {
                 "id": asset_id,
                 "user_id": user_id,
                 "prompt": prompt,
+                "mime_type": mime_type,
                 "image_data": image_data,
                 "created_at": created_at,
             },
