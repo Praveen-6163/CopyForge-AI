@@ -1,9 +1,10 @@
 import datetime
 import logging
+import time
 import uuid
 from typing import List, Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -23,12 +24,17 @@ from app.services.ai_service import (
     AIProviderNotConfigured,
     ai_service,
 )
+from app.services.gemini_service import gemini_service
 from app.services.history_service import history_service
 from app.services.validation_service import validation_service
 from app.templates.preset_templates import get_preset_templates
 
 logger = logging.getLogger("copyforge.router")
 router = APIRouter(prefix="/api")
+
+
+class GeminiTestRequest(BaseModel):
+    prompt: str | None = None
 
 
 @router.get("/health", response_model=HealthResponse)
@@ -43,6 +49,52 @@ async def health_check():
         openai_model=settings.GEMINI_MODEL,
         ai_configured=settings.AI_CONFIGURED,
     )
+
+
+@router.get("/health/gemini")
+@router.get("/ai/health")
+async def gemini_health_check():
+    return await gemini_service.check_model()
+
+
+@router.post("/test/gemini")
+@router.post("/ai/test")
+async def gemini_test_endpoint(req: GeminiTestRequest | None = None):
+    if not settings.AI_CONFIGURED:
+        return {
+            "ok": False,
+            "provider": "Google Gemini",
+            "model": settings.GEMINI_MODEL,
+            "message": "Gemini API key is not configured on the backend.",
+        }
+    prompt = (req and req.prompt) or "Respond with: CopyForge AI Gemini API is operational."
+    try:
+        response_text = await gemini_service.generate_text(
+            prompt,
+            generation_config={"max_output_tokens": 50},
+        )
+        return {
+            "ok": True,
+            "provider": "Google Gemini",
+            "model": settings.GEMINI_MODEL,
+            "message": "Gemini API test request succeeded.",
+            "sample_output": response_text.strip(),
+        }
+    except AIProviderError as error:
+        return {
+            "ok": False,
+            "provider": "Google Gemini",
+            "model": settings.GEMINI_MODEL,
+            "message": str(error),
+            "error_type": error.error_type,
+        }
+    except Exception as error:
+        return {
+            "ok": False,
+            "provider": "Google Gemini",
+            "model": settings.GEMINI_MODEL,
+            "message": "Gemini test request failed unexpectedly.",
+        }
 
 
 def _generation_response(
@@ -90,6 +142,16 @@ def _generation_response(
 
 async def _generate_for_user(req: GenerateRequest, user_id: str) -> GenerationResponse:
     generation_id = str(uuid.uuid4())
+    request_id = f"req_{uuid.uuid4().hex[:8]}"
+    start_time = time.time()
+    logger.info(
+        "[%s] Generation request received: platform=%s tone=%s topic=%s user_id=%s",
+        request_id,
+        req.platform,
+        req.tone,
+        req.product_name[:40],
+        user_id[:8],
+    )
     try:
         generated, compiled_prompt = await ai_service.generate_text(
             product_name=req.product_name,
@@ -128,6 +190,14 @@ async def _generate_for_user(req: GenerateRequest, user_id: str) -> GenerationRe
             image_prompt=generated["image_prompt"],
             user_id=user_id,
         )
+        duration_ms = int((time.time() - start_time) * 1000)
+        logger.info(
+            "[%s] Generation succeeded: platform=%s duration_ms=%d model=%s",
+            request_id,
+            req.platform,
+            duration_ms,
+            settings.GEMINI_MODEL,
+        )
         return _generation_response(
             generation_id=generation_id,
             product_name=req.product_name,
@@ -148,18 +218,50 @@ async def _generate_for_user(req: GenerateRequest, user_id: str) -> GenerationRe
             image_prompt=generated["image_prompt"],
         )
     except AIProviderNotConfigured as error:
-        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+        logger.warning("[%s] Gemini API key not configured.", request_id)
+        raise HTTPException(
+            status_code=error.status_code,
+            detail={
+                "success": False,
+                "error": "gemini_unconfigured",
+                "message": "Gemini API key is not configured on the backend.",
+                "request_id": request_id,
+            },
+        ) from error
     except AIProviderError as error:
-        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+        logger.warning("[%s] Gemini generation failed: %s", request_id, str(error))
+        raise HTTPException(
+            status_code=error.status_code,
+            detail={
+                "success": False,
+                "error": "gemini_unavailable",
+                "message": str(error),
+                "request_id": request_id,
+            },
+        ) from error
     except HTTPException:
         raise
-    except SQLAlchemyError:
-        raise
+    except SQLAlchemyError as error:
+        logger.exception("[%s] Database failure during generation save.", request_id)
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "success": False,
+                "error": "database_unavailable",
+                "message": "Database is temporarily unavailable. Please try again.",
+                "request_id": request_id,
+            },
+        ) from error
     except Exception as error:
-        logger.exception("Content generation failed.")
+        logger.exception("[%s] Generation failed unexpectedly.", request_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Content generation failed. Please try again.",
+            detail={
+                "success": False,
+                "error": "internal_error",
+                "message": "Content generation failed. Please try again.",
+                "request_id": request_id,
+            },
         ) from error
 
 

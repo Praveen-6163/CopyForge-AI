@@ -25,11 +25,82 @@ export const apiClient = axios.create({
   timeout: 120000,
 });
 
-apiClient.interceptors.request.use((request) => {
-  const sessionId = getLinkedInSession();
-  if (sessionId) request.headers.set('Authorization', `Bearer ${sessionId}`);
-  return request;
-});
+export interface ParsedApiError {
+  message: string;
+  isAuth: boolean;
+  requestId?: string;
+  errorType?: string;
+}
+
+export const parseApiError = (error: any): ParsedApiError => {
+  if (axios.isAxiosError(error)) {
+    const status = error.response?.status;
+    const data = error.response?.data;
+
+    const detailObj = typeof data?.detail === 'object' ? data.detail : null;
+    const detailMsg = typeof data?.detail === 'string' ? data.detail : detailObj?.message;
+    const requestId = detailObj?.request_id || data?.request_id;
+    const errorType = detailObj?.error || data?.error_type;
+
+    if (status === 401) {
+      return {
+        message: detailMsg || 'LinkedIn connection expired. Reconnect LinkedIn to continue generating.',
+        isAuth: true,
+        requestId,
+        errorType: 'UNAUTHORIZED',
+      };
+    }
+
+    if (
+      status === 503 ||
+      status === 504 ||
+      errorType === 'gemini_unavailable' ||
+      errorType === 'MODEL_ACCESS' ||
+      errorType === 'MODEL_FALLBACK_EXHAUSTED'
+    ) {
+      return {
+        message: detailMsg || 'Gemini is temporarily unavailable. Please try again in a few seconds.',
+        isAuth: false,
+        requestId,
+        errorType: 'AI_UNAVAILABLE',
+      };
+    }
+
+    if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+      return {
+        message: 'The AI request took too long. Please try again.',
+        isAuth: false,
+        requestId,
+        errorType: 'TIMEOUT',
+      };
+    }
+
+    if (!error.response || error.code === 'ERR_NETWORK') {
+      return {
+        message: 'Backend is waking up or temporarily unavailable. Please try again in a few seconds.',
+        isAuth: false,
+        requestId,
+        errorType: 'NETWORK_ERROR',
+      };
+    }
+
+    if (detailMsg) {
+      return {
+        message: detailMsg,
+        isAuth: false,
+        requestId,
+        errorType: errorType || 'SERVER_ERROR',
+      };
+    }
+  }
+
+  return {
+    message:
+      error?.message ||
+      'Unable to connect to the CopyForge backend. Please contact the administrator.',
+    isAuth: false,
+  };
+};
 
 export const fetchHealth = async (): Promise<HealthStatus> => {
   const response = await apiClient.get<HealthStatus>('/health');

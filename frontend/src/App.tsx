@@ -32,7 +32,7 @@ import {
   PipelineStage, HistoryItem, TemplateItem, ToneType, PlatformType
 } from './types/generation';
 import {
-  fetchHealth, generateCopy, improveCopy, toggleSaveItem
+  fetchHealth, generateCopy, improveCopy, toggleSaveItem, parseApiError
 } from './services/api';
 import { TrendItem } from './services/platformApi';
 import { getWorkspacePreferences } from './services/workspacePreferences';
@@ -100,16 +100,14 @@ export const App: React.FC = () => {
       setPipelineStage('ready');
     } catch (e: any) {
       console.error('Generation error:', e);
-      const statusCode = e.response?.status;
-      const errorMsg = e.response?.data?.detail || e.message || 'Generation failed';
-      if (statusCode === 401) {
-        setGenerationError({
-          message: 'LinkedIn connection expired. Reconnect LinkedIn to continue generating.',
-          isAuth: true,
-        });
-      } else {
-        setGenerationError({ message: `Generation Error: ${errorMsg}`, isAuth: false });
-      }
+      const parsed = parseApiError(e);
+      const displayMessage = parsed.requestId
+        ? `${parsed.message} (Request ID: ${parsed.requestId})`
+        : parsed.message;
+      setGenerationError({
+        message: displayMessage,
+        isAuth: parsed.isAuth,
+      });
       setPipelineStage('idle');
     } finally {
       setIsLoading(false);
