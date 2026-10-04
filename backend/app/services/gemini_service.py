@@ -190,7 +190,7 @@ class GeminiService:
         def request(client: Any, api_key: str) -> types.GenerateContentResponse:
             last_error: Exception | None = None
             for index, model_name in enumerate(models):
-                max_retries = 2
+                max_retries = 1
                 for attempt in range(max_retries + 1):
                     try:
                         response = client.models.generate_content(
@@ -207,26 +207,24 @@ class GeminiService:
                         return response
                     except errors.APIError as error:
                         code = getattr(error, "code", None)
-                        status = getattr(error, "status", None)
                         mapped_error = _provider_error(error, model_name, api_key)
                         last_error = mapped_error
 
                         if code in (401, 403):
                             raise mapped_error from error
 
-                        if code in (429, 500, 503) or status in ("UNAVAILABLE", "RESOURCE_EXHAUSTED"):
-                            if attempt < max_retries:
-                                backoff_sec = (attempt + 1) * 0.5
-                                logger.warning(
-                                    "Gemini temporary error HTTP %s on model %s; retrying in %.1fs (attempt %d/%d)...",
-                                    code,
-                                    model_name,
-                                    backoff_sec,
-                                    attempt + 1,
-                                    max_retries,
-                                )
-                                time.sleep(backoff_sec)
-                                continue
+                        if attempt < max_retries and code in (429, 500, 503):
+                            backoff_sec = (attempt + 1) * 0.3
+                            logger.warning(
+                                "Gemini temporary error HTTP %s on model %s; retrying in %.1fs (attempt %d/%d)...",
+                                code,
+                                model_name,
+                                backoff_sec,
+                                attempt + 1,
+                                max_retries,
+                            )
+                            time.sleep(backoff_sec)
+                            continue
 
                         if index + 1 < len(models):
                             logger.warning(
@@ -235,13 +233,10 @@ class GeminiService:
                                 code,
                                 models[index + 1],
                             )
-                            break
-                        else:
-                            logger.error(
-                                "All Gemini model fallbacks exhausted. Final model %s failed with code %s.",
-                                model_name,
-                                code,
-                            )
+                        break
+
+            if isinstance(last_error, AIProviderError):
+                raise last_error
 
             raise AIProviderError(
                 "AI generation is temporarily unavailable. Please try again in a few seconds.",
