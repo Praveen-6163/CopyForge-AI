@@ -31,7 +31,7 @@ async def gemini_test(req: GeminiTestRequest | None = None):
     try:
         response_text = await gemini_service.generate_text(
             prompt,
-            generation_config={"max_output_tokens": 50},
+            generation_config={"max_output_tokens": 100},
         )
         return {
             "ok": True,

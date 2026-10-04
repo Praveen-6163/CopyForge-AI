@@ -23,29 +23,28 @@ def _clean_json_text(text: str) -> str:
 
 
 def _parse_generated_content(response_data: Any, platform: str = "linkedin") -> Dict[str, Any]:
+    parsed: dict[str, Any] = {}
+    raw_text = ""
+
     if isinstance(response_data, str):
-        cleaned_text = _clean_json_text(response_data)
+        raw_text = response_data.strip()
+        cleaned_text = _clean_json_text(raw_text)
         try:
-            parsed = json.loads(cleaned_text)
-        except json.JSONDecodeError as error:
-            logger.warning("Could not parse structured AI response: %s", error)
-            raise AIProviderError(
-                "Gemini returned content in an invalid format. Please retry.",
-                error_type="INVALID_RESPONSE",
-            ) from error
+            loaded = json.loads(cleaned_text)
+            if isinstance(loaded, dict):
+                parsed = loaded
+        except Exception:
+            match = re.search(r"\{.*\}", cleaned_text, re.DOTALL)
+            if match:
+                try:
+                    loaded = json.loads(match.group(0))
+                    if isinstance(loaded, dict):
+                        parsed = loaded
+                except Exception:
+                    pass
     elif isinstance(response_data, dict):
         parsed = response_data
-    else:
-        raise AIProviderError(
-            "Gemini returned content in an invalid format. Please retry.",
-            error_type="INVALID_RESPONSE",
-        )
-
-    if not isinstance(parsed, dict):
-        raise AIProviderError(
-            "Gemini returned content in an invalid format. Please retry.",
-            error_type="INVALID_RESPONSE",
-        )
+        raw_text = json.dumps(response_data, ensure_ascii=False)
 
     post = str(parsed.get("post") or parsed.get("content") or "").strip()
     headline = str(parsed.get("headline") or parsed.get("hook") or "").strip()
@@ -68,10 +67,29 @@ def _parse_generated_content(response_data: Any, platform: str = "linkedin") -> 
         ]
 
     if not post:
-        raise AIProviderError(
-            "Gemini returned empty post content. Please retry.",
-            error_type="EMPTY_RESPONSE",
-        )
+        if raw_text:
+            post = raw_text
+            lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+            first_line = lines[0] if lines else raw_text[:80]
+            if first_line.startswith("#"):
+                first_line = first_line.lstrip("#").strip()
+            headline = first_line[:100]
+
+            extracted_tags = [
+                f"#{t.lstrip('#')}" for t in re.findall(r"#\w+", raw_text)
+            ]
+            if extracted_tags:
+                hashtags = list(dict.fromkeys(extracted_tags))
+            else:
+                hashtags = ["#AI", "#Innovation", "#Technology"]
+
+            cta = "Connect with us to learn more."
+            image_prompt = f"Professional visual for {platform} post about {headline[:50]}"
+        else:
+            raise AIProviderError(
+                "Gemini returned an empty response. Please retry.",
+                error_type="EMPTY_RESPONSE",
+            )
 
     return {
         "platform": platform.lower(),
@@ -79,7 +97,7 @@ def _parse_generated_content(response_data: Any, platform: str = "linkedin") -> 
         "post": post,
         "content": post,
         "hook": headline or post[:80],
-        "hashtags": hashtags,
+        "hashtags": hashtags or ["#AI", "#Innovation"],
         "cta": cta or "Connect with us to learn more.",
         "source": "CopyForge AI",
         "image_prompt": image_prompt or f"Professional visual for {platform} post",

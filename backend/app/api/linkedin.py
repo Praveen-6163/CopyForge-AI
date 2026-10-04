@@ -440,6 +440,8 @@ async def _linkedin_status_payload(session_id: str | None) -> dict[str, Any]:
         "connected": True,
         "provider": provider,
         "member_id": member_id,
+        "member_urn": f"urn:li:person:{member_id}",
+        "name": display_name,
         "display_name": display_name,
         "member_name": display_name,
         "profile_image": profile_image,
@@ -451,6 +453,7 @@ async def _linkedin_status_payload(session_id: str | None) -> dict[str, Any]:
     }
 
 
+@router.get("/api/linkedin/status")
 @router.get("/api/social/linkedin/status")
 async def linkedin_status(request: Request) -> JSONResponse:
     return JSONResponse(await _linkedin_status_payload(_request_session_id(request)))
