@@ -137,6 +137,7 @@ class Settings:
             "http://localhost:3000",
             "http://127.0.0.1:3000",
             "https://copyforge-aiauto.netlify.app",
+            "https://copy-forge-ai-hazel.vercel.app",
             self.FRONTEND_URL,
         }
         origins.update(

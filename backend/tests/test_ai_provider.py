@@ -50,20 +50,21 @@ def test_ai_provider_status_configured(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_ai_service_requires_provider_when_unconfigured(monkeypatch):
+async def test_ai_service_uses_fallback_when_unconfigured(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-    with pytest.raises(AIProviderNotConfigured) as exc_info:
-        await ai_service.generate_text(
-            product_name="Test SaaS",
-            product_description="Test Description",
-            platform="LinkedIn",
-            tone="Professional",
-            audience="Developers",
-            objective="Product promotion",
-        )
-    assert "Gemini API key is not configured on the backend." in str(exc_info.value)
+    content, prompt = await ai_service.generate_text(
+        product_name="Test SaaS",
+        product_description="Test Description",
+        platform="LinkedIn",
+        tone="Professional",
+        audience="Developers",
+        objective="Product promotion",
+    )
+    assert content["fallback_used"] is True
+    assert "Test SaaS" in content["post"]
+    assert content["platform"] == "linkedin"
 
 
 @pytest.mark.anyio
@@ -112,19 +113,31 @@ async def test_ai_service_handles_auth_error(monkeypatch):
             error_type="INVALID_CREDENTIALS",
         )
 
+    async def mock_generate_text(self, prompt, **kwargs):
+        raise AIProviderError(
+            "Gemini API key is invalid or unavailable. Please check the backend environment configuration.",
+            status_code=503,
+            error_type="INVALID_CREDENTIALS",
+        )
+
     monkeypatch.setattr(
         gemini_service,
         "generate_structured_content",
         mock_generate_structured_content.__get__(gemini_service, type(gemini_service)),
     )
+    monkeypatch.setattr(
+        gemini_service,
+        "generate_text",
+        mock_generate_text.__get__(gemini_service, type(gemini_service)),
+    )
 
-    with pytest.raises(AIProviderError) as exc_info:
-        await ai_service.generate_text(
-            product_name="Test SaaS",
-            product_description="Test Description",
-            platform="LinkedIn",
-            tone="Professional",
-            audience="Developers",
-            objective="Product promotion",
-        )
-    assert "Gemini API key is invalid or unavailable" in str(exc_info.value)
+    content, prompt = await ai_service.generate_text(
+        product_name="Test SaaS",
+        product_description="Test Description",
+        platform="LinkedIn",
+        tone="Professional",
+        audience="Developers",
+        objective="Product promotion",
+    )
+    assert content["fallback_used"] is True
+    assert "Test SaaS" in content["post"]

@@ -104,8 +104,56 @@ def _parse_generated_content(response_data: Any, platform: str = "linkedin") -> 
     }
 
 
+def generate_local_fallback(
+    product_name: str,
+    product_description: str,
+    platform: str,
+    tone: str,
+    audience: str = "Professionals",
+    objective: str = "Product promotion",
+    content_type: str = "Social post",
+) -> Dict[str, Any]:
+    clean_name = product_name.strip() or "CopyForge AI"
+    clean_desc = product_description.strip() or "Automated AI content creation and publishing platform."
+    headline = f"🚀 Transforming {clean_name}: Next-Gen {objective.title()} Strategy"
+
+    first_sentence = clean_desc.split(".")[0].strip()
+    if not first_sentence.endswith("."):
+        first_sentence += "."
+
+    post = f"""{headline}
+
+{first_sentence}
+
+Key Highlights for {audience}:
+• Tailored for {platform}: Optimized structure for maximum impact.
+• {tone.title()} Tone: Clear, persuasive, and high-converting message.
+• Accelerated Execution: Turn ideas into platform-ready posts in seconds.
+
+What are your thoughts on using AI to elevate {clean_name}? Share your insights below!
+
+#CopyForge #AI #{clean_name.replace(' ', '')} #Innovation #{tone}"""
+
+    hashtags = ["#CopyForge", "#AI", f"#{clean_name.replace(' ', '')}", "#Innovation", f"#{tone}"]
+    cta = "What are your thoughts on using AI to elevate your strategy? Share your insights below!"
+    image_prompt = f"Professional high-converting visual representation for {clean_name} on {platform}"
+
+    return {
+        "platform": platform.lower(),
+        "headline": headline,
+        "post": post,
+        "content": post,
+        "hook": headline,
+        "hashtags": hashtags,
+        "cta": cta,
+        "source": "CopyForge AI (Fallback Mode)",
+        "image_prompt": image_prompt,
+        "fallback_used": True,
+    }
+
+
 class AIService:
-    """Server-side text generation through Google Gemini."""
+    """Server-side text generation through Google Gemini with local fallback protection."""
 
     def _require_provider(self) -> None:
         if not settings.AI_CONFIGURED:
@@ -125,7 +173,6 @@ class AIService:
         top_p: float = 0.9,
         max_tokens: int = 750,
     ) -> Tuple[Dict[str, Any], str]:
-        self._require_provider()
         system_prompt, user_prompt = prompt_builder_service.compile_prompt(
             product_name=product_name,
             product_description=product_description,
@@ -138,17 +185,68 @@ class AIService:
         )
         compiled_prompt = f"System: {system_prompt[:250]}...\n\nUser: {user_prompt}"
 
-        raw_result = await gemini_service.generate_structured_content(
-            user_prompt,
-            system_instruction=system_prompt,
-            generation_config={
-                "temperature": temperature,
-                "top_p": top_p,
-                "max_output_tokens": max_tokens,
-            },
+        if not settings.AI_CONFIGURED:
+            logger.warning("Gemini API key not configured. Using local fallback generator.")
+            fallback = generate_local_fallback(
+                product_name=product_name,
+                product_description=product_description,
+                platform=platform,
+                tone=tone,
+                audience=audience,
+                objective=objective,
+                content_type=content_type,
+            )
+            return fallback, compiled_prompt
+
+        # Tier 1: Structured JSON output via Gemini SDK
+        try:
+            raw_result = await gemini_service.generate_structured_content(
+                user_prompt,
+                system_instruction=system_prompt,
+                generation_config={
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "max_output_tokens": max_tokens,
+                },
+            )
+            generated_content = _parse_generated_content(raw_result, platform=platform)
+            return generated_content, compiled_prompt
+        except Exception as first_error:
+            logger.warning(
+                "Structured generation attempt failed (%s). Retrying with normal text generation...",
+                first_error,
+            )
+
+        # Tier 2: Normal text generation via Gemini + robust multi-layer parser
+        try:
+            raw_text = await gemini_service.generate_text(
+                user_prompt,
+                system_instruction=system_prompt,
+                generation_config={
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "max_output_tokens": max_tokens,
+                },
+            )
+            generated_content = _parse_generated_content(raw_text, platform=platform)
+            return generated_content, compiled_prompt
+        except Exception as second_error:
+            logger.warning(
+                "Normal text generation attempt also failed (%s). Using local fallback generator.",
+                second_error,
+            )
+
+        # Tier 3: Local deterministic fallback generator
+        fallback = generate_local_fallback(
+            product_name=product_name,
+            product_description=product_description,
+            platform=platform,
+            tone=tone,
+            audience=audience,
+            objective=objective,
+            content_type=content_type,
         )
-        generated_content = _parse_generated_content(raw_result, platform=platform)
-        return generated_content, compiled_prompt
+        return fallback, compiled_prompt
 
     async def improve_text(
         self,
@@ -162,7 +260,6 @@ class AIService:
         temperature: float = 0.5,
         top_p: float = 0.9,
     ) -> Tuple[str, str]:
-        self._require_provider()
         system_prompt, user_prompt = prompt_builder_service.compile_improvement_prompt(
             current_content=current_content,
             action=action,
@@ -173,17 +270,23 @@ class AIService:
             new_platform=new_platform,
         )
 
-        generated_text = await gemini_service.generate_text(
-            user_prompt,
-            system_instruction=system_prompt,
-            generation_config={
-                "temperature": temperature,
-                "top_p": top_p,
-                "max_output_tokens": 1000,
-            },
-        )
+        if not settings.AI_CONFIGURED:
+            return current_content, f"System: {system_prompt}\nUser: {user_prompt}"
 
-        return generated_text.strip(), f"System: {system_prompt}\nUser: {user_prompt}"
+        try:
+            generated_text = await gemini_service.generate_text(
+                user_prompt,
+                system_instruction=system_prompt,
+                generation_config={
+                    "temperature": temperature,
+                    "top_p": top_p,
+                    "max_output_tokens": 1000,
+                },
+            )
+            return generated_text.strip(), f"System: {system_prompt}\nUser: {user_prompt}"
+        except Exception as error:
+            logger.warning("Gemini refinement encountered issue (%s). Returning current content.", error)
+            return current_content, f"System: {system_prompt}\nUser: {user_prompt}"
 
 
 ai_service = AIService()

@@ -34,12 +34,15 @@ def _database_url() -> str:
             return "postgresql+asyncpg://" + configured_url.removeprefix("postgresql://")
         return configured_url
 
-    if os.getenv("RENDER"):
+    if os.getenv("RENDER") and not os.getenv("DATABASE_URL"):
         raise DatabaseUnavailableError(
             "DATABASE_URL is required for database access on Render."
         )
 
-    db_path = os.path.abspath(settings.DB_PATH)
+    if os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+        db_path = "/tmp/copyforge.db"
+    else:
+        db_path = os.path.abspath(settings.DB_PATH)
     return f"sqlite+aiosqlite:///{db_path}"
 
 

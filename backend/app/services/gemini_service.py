@@ -20,9 +20,9 @@ FALLBACK_MODELS = (
     "gemini-3.8-flash",
     "gemini-3.7-flash",
     "gemini-3.6-flash",
-    "gemini-3.5-flash",
     "gemini-3.5-flash-lite",
-    "gemini-flash-latest",
+    "gemini-3.5-flash",
+    "gemini-2.5-flash",
 )
 GEMINI_ENDPOINT = "generativelanguage.googleapis.com (Gemini Developer API v1beta)"
 REQUEST_TIMEOUT_MS = 60_000
@@ -358,20 +358,24 @@ class GeminiService:
         return await self._run(list_models)
 
     async def check_model(self) -> dict[str, Any]:
+        start_time = time.perf_counter()
         configured_model = settings.GEMINI_MODEL or DEFAULT_MODEL
         if not settings.AI_CONFIGURED:
+            latency = round((time.perf_counter() - start_time) * 1000, 2)
             return {
                 "ok": False,
                 "status": "error",
                 "provider": "Google Gemini",
                 "configured": False,
                 "model": configured_model,
-                "message": "Gemini API key is not configured on the backend.",
+                "latency_ms": latency,
                 "error": "Gemini API key is not configured.",
                 "error_type": "CONFIGURATION",
+                "message": "Gemini API key is not configured on the backend.",
             }
         try:
             available = set(await self.get_available_models())
+            latency = round((time.perf_counter() - start_time) * 1000, 2)
             for candidate in self._candidate_models(configured_model):
                 if candidate in available:
                     return {
@@ -381,6 +385,8 @@ class GeminiService:
                         "configured": True,
                         "model": configured_model,
                         "active_model": candidate,
+                        "latency_ms": latency,
+                        "error": None,
                         "message": "Gemini API is working",
                     }
             return {
@@ -390,20 +396,25 @@ class GeminiService:
                 "configured": True,
                 "model": configured_model,
                 "active_model": configured_model,
+                "latency_ms": latency,
+                "error": None,
                 "message": "Gemini API is working",
             }
         except AIProviderError as error:
+            latency = round((time.perf_counter() - start_time) * 1000, 2)
             return {
                 "ok": False,
                 "status": "error",
                 "provider": "Google Gemini",
                 "configured": True,
                 "model": configured_model,
-                "message": str(error),
+                "latency_ms": latency,
                 "error": str(error),
                 "error_type": error.error_type,
+                "message": str(error),
             }
         except Exception as error:
+            latency = round((time.perf_counter() - start_time) * 1000, 2)
             safe_err = _safe_message(error, settings.GEMINI_API_KEY)
             return {
                 "ok": False,
@@ -411,9 +422,10 @@ class GeminiService:
                 "provider": "Google Gemini",
                 "configured": True,
                 "model": configured_model,
-                "message": safe_err,
+                "latency_ms": latency,
                 "error": safe_err,
                 "error_type": "UNKNOWN_ERROR",
+                "message": safe_err,
             }
 
 
