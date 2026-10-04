@@ -4,9 +4,13 @@ export interface LinkedInConnectionStatus {
   provider?: 'linkedin';
   member_id?: string;
   display_name?: string;
+  member_name?: string;
   profile_image?: string | null;
   token_expires_at?: number;
   connected_at?: string;
+  posting_permission?: boolean;
+  token_available?: boolean;
+  token_expired?: boolean;
   error?: 'token_expired';
 }
 

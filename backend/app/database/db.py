@@ -294,6 +294,20 @@ async def _initialize_db(url: str) -> None:
             updated_at TEXT NOT NULL
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS social_posts (
+            id TEXT PRIMARY KEY,
+            platform TEXT NOT NULL,
+            account_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            status TEXT NOT NULL,
+            external_post_id TEXT,
+            published_at TEXT,
+            error_message TEXT,
+            created_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_social_posts_user ON social_posts(account_id, created_at)",
     )
 
     async with engine.begin() as connection:
@@ -345,6 +359,23 @@ async def _initialize_db(url: str) -> None:
                 await connection.execute(
                     text(f"ALTER TABLE history ADD COLUMN {column_name} {definition}")
                 )
+
+        sa_columns = await connection.run_sync(
+            lambda sync_connection: {
+                column["name"] for column in inspect(sync_connection).get_columns("social_accounts")
+            }
+        )
+        if "scopes" not in sa_columns:
+            await connection.execute(text("ALTER TABLE social_accounts ADD COLUMN scopes TEXT"))
+
+        lc_columns = await connection.run_sync(
+            lambda sync_connection: {
+                column["name"] for column in inspect(sync_connection).get_columns("linkedin_connections")
+            }
+        )
+        if "scopes" not in lc_columns:
+            await connection.execute(text("ALTER TABLE linkedin_connections ADD COLUMN scopes TEXT"))
+
         automation_columns = await connection.run_sync(
             lambda sync_connection: {
                 column["name"]

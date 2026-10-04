@@ -23,7 +23,7 @@ router = APIRouter()
 LINKEDIN_AUTHORIZE_URL = "https://www.linkedin.com/oauth/v2/authorization"
 LINKEDIN_TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
 LINKEDIN_USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
-LINKEDIN_SCOPES = ("openid", "profile", "w_member_social")
+LINKEDIN_SCOPES = ("openid", "profile", "email", "w_member_social")
 SESSION_COOKIE = "copyforge_linkedin_session"
 STATE_TTL_SECONDS = 600
 SESSION_TTL_SECONDS = 30 * 24 * 60 * 60
@@ -124,6 +124,7 @@ async def _save_connection(
     profile: dict[str, Any],
     access_token: str,
     token_expires_at: int,
+    scopes: str = "openid profile email w_member_social",
 ) -> None:
     member_id = profile.get("sub")
     display_name = profile.get("name")
@@ -157,10 +158,10 @@ async def _save_connection(
                 """
                 INSERT INTO social_accounts (
                     user_id, platform, provider_user_id, display_name, profile_image,
-                    access_token_ciphertext, token_expires_at, connected_at
+                    access_token_ciphertext, token_expires_at, connected_at, scopes
                 ) VALUES (
                     :user_id, 'linkedin', :provider_user_id, :display_name, :profile_image,
-                    :access_token_ciphertext, :token_expires_at, :connected_at
+                    :access_token_ciphertext, :token_expires_at, :connected_at, :scopes
                 )
                 ON CONFLICT(user_id, platform) DO UPDATE SET
                     provider_user_id = excluded.provider_user_id,
@@ -168,7 +169,8 @@ async def _save_connection(
                     profile_image = excluded.profile_image,
                     access_token_ciphertext = excluded.access_token_ciphertext,
                     token_expires_at = excluded.token_expires_at,
-                    connected_at = excluded.connected_at
+                    connected_at = excluded.connected_at,
+                    scopes = excluded.scopes
                 """
             ),
             {
@@ -179,6 +181,7 @@ async def _save_connection(
                 "access_token_ciphertext": encrypted_token,
                 "token_expires_at": token_expires_at,
                 "connected_at": connected_at,
+                "scopes": scopes,
             },
         )
         await db.execute(
@@ -203,10 +206,10 @@ async def _save_connection(
                 """
                 INSERT INTO linkedin_connections (
                     session_hash, provider, member_id, display_name, profile_image,
-                    access_token_ciphertext, token_expires_at, connected_at
+                    access_token_ciphertext, token_expires_at, connected_at, scopes
                 ) VALUES (
                     :session_hash, 'linkedin', :member_id, :display_name, :profile_image,
-                    :access_token_ciphertext, :token_expires_at, :connected_at
+                    :access_token_ciphertext, :token_expires_at, :connected_at, :scopes
                 )
                 ON CONFLICT(session_hash) DO UPDATE SET
                     provider = excluded.provider,
@@ -215,7 +218,8 @@ async def _save_connection(
                     profile_image = excluded.profile_image,
                     access_token_ciphertext = excluded.access_token_ciphertext,
                     token_expires_at = excluded.token_expires_at,
-                    connected_at = excluded.connected_at
+                    connected_at = excluded.connected_at,
+                    scopes = excluded.scopes
                 """
             ),
             {
@@ -226,6 +230,7 @@ async def _save_connection(
                 "access_token_ciphertext": encrypted_token,
                 "token_expires_at": token_expires_at,
                 "connected_at": connected_at,
+                "scopes": scopes,
             },
         )
 
@@ -237,7 +242,7 @@ async def _connection_for_session(session_hash: str) -> tuple[Any, ...] | None:
                 text(
                     """
                     SELECT provider, member_id, display_name, profile_image,
-                           token_expires_at, connected_at
+                           token_expires_at, connected_at, scopes
                     FROM linkedin_connections WHERE session_hash = :session_hash
                     """
                 ),
@@ -338,12 +343,14 @@ async def linkedin_oauth_callback(
             if not isinstance(profile.get("sub"), str) or not isinstance(profile.get("name"), str):
                 return _frontend_redirect("failed", "profile")
 
-        await _save_connection(
-            session_hash,
-            profile,
-            access_token,
-            int(time.time() + expires_in),
-        )
+            scope_granted = str(token_data.get("scope", ""))
+            await _save_connection(
+                session_hash,
+                profile,
+                access_token,
+                int(time.time() + expires_in),
+                scopes=scope_granted,
+            )
         return _frontend_redirect("connected", session_id=session_id)
     except httpx.TimeoutException:
         logger.warning("LinkedIn OAuth request timed out.")
@@ -383,35 +390,119 @@ def _request_session_id(request: Request) -> str | None:
 
 async def _linkedin_status_payload(session_id: str | None) -> dict[str, Any]:
     if not _oauth_enabled():
-        return {"configured": False, "connected": False}
+        return {
+            "configured": False,
+            "connected": False,
+            "posting_permission": False,
+            "token_available": False,
+            "token_expired": False,
+        }
     if not session_id:
-        return {"configured": True, "connected": False}
-
-    row = await _connection_for_session(_hash(session_id))
-    if row is None:
-        return {"configured": True, "connected": False}
-    provider, member_id, display_name, profile_image, token_expires_at, connected_at = row
-    if int(token_expires_at) <= int(time.time()):
         return {
             "configured": True,
             "connected": False,
+            "posting_permission": False,
+            "token_available": False,
+            "token_expired": False,
+        }
+
+    row = await _connection_for_session(_hash(session_id))
+    if row is None:
+        return {
+            "configured": True,
+            "connected": False,
+            "posting_permission": False,
+            "token_available": False,
+            "token_expired": False,
+        }
+    provider, member_id, display_name, profile_image, token_expires_at, connected_at, scopes = row
+    token_expired = int(token_expires_at) <= int(time.time())
+    scopes_str = str(scopes or "")
+    has_posting_permission = ("w_member_social" in scopes_str) if scopes_str else True
+
+    if token_expired:
+        return {
+            "configured": True,
+            "connected": False,
+            "provider": provider,
+            "member_id": member_id,
+            "display_name": display_name,
+            "member_name": display_name,
+            "profile_image": profile_image,
+            "posting_permission": has_posting_permission,
+            "token_available": True,
+            "token_expired": True,
             "error": "token_expired",
         }
+
     return {
         "configured": True,
         "connected": True,
         "provider": provider,
         "member_id": member_id,
         "display_name": display_name,
+        "member_name": display_name,
         "profile_image": profile_image,
         "token_expires_at": int(token_expires_at),
         "connected_at": connected_at,
+        "posting_permission": has_posting_permission,
+        "token_available": True,
+        "token_expired": False,
     }
 
 
 @router.get("/api/social/linkedin/status")
 async def linkedin_status(request: Request) -> JSONResponse:
     return JSONResponse(await _linkedin_status_payload(_request_session_id(request)))
+
+
+@router.post("/api/social/linkedin/test-post")
+async def linkedin_test_post(request: Request) -> JSONResponse:
+    session_id = _request_session_id(request)
+    if not session_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="LinkedIn authorization expired. Please reconnect LinkedIn.",
+        )
+    status_payload = await _linkedin_status_payload(session_id)
+    if not status_payload.get("connected") or status_payload.get("token_expired"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="LinkedIn authorization expired. Please reconnect LinkedIn.",
+        )
+    if not status_payload.get("posting_permission"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="LinkedIn posting permission is missing. Please reconnect and approve posting access.",
+        )
+
+    member_id = status_payload.get("member_id")
+    if not member_id:
+        raise HTTPException(status_code=401, detail="LinkedIn member ID not found.")
+
+    from app.services.publishing import publish_post, PublishingError
+
+    test_post_data = {
+        "user_id": member_id,
+        "platform": "linkedin",
+        "content": "Test post from CopyForge AI 🚀\n\nThis is a real LinkedIn API publishing test.",
+    }
+    try:
+        published_url = await publish_post(test_post_data)
+    except PublishingError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+    post_id = published_url.rstrip("/").split("/")[-1]
+    return JSONResponse(
+        status_code=201,
+        content={
+            "success": True,
+            "http_status": 201,
+            "external_post_id": post_id,
+            "published_url": published_url,
+            "message": "Successfully published test post to LinkedIn.",
+        },
+    )
 
 
 @router.get("/api/social/accounts")

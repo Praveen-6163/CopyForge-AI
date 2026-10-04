@@ -158,6 +158,17 @@ export const fetchPublishedPosts = async (): Promise<PublishedPost[]> => {
   return response.data;
 };
 
+export const publishLinkedInTestPost = async (): Promise<{
+  success: boolean;
+  http_status: number;
+  external_post_id: string;
+  published_url: string;
+  message: string;
+}> => {
+  const response = await apiClient.post('/social/linkedin/test-post');
+  return response.data;
+};
+
 export interface AnalyticsSummary {
   published_count: number;
   scheduled_count: number;

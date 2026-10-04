@@ -60,6 +60,44 @@ async def _account_token(user_id: str, platform: str) -> tuple[str, str]:
     return str(account[0]), token
 
 
+async def record_social_post(
+    post_id: str,
+    platform: str,
+    account_id: str,
+    content: str,
+    status: str,
+    external_post_id: str | None = None,
+    error_message: str | None = None,
+) -> None:
+    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    published_at = now if status == "published" else None
+    async with get_db() as db:
+        await db.execute(
+            text(
+                """
+                INSERT INTO social_posts (
+                    id, platform, account_id, content, status,
+                    external_post_id, published_at, error_message, created_at
+                ) VALUES (
+                    :id, :platform, :account_id, :content, :status,
+                    :external_post_id, :published_at, :error_message, :created_at
+                )
+                """
+            ),
+            {
+                "id": post_id,
+                "platform": platform,
+                "account_id": account_id,
+                "content": content,
+                "status": status,
+                "external_post_id": external_post_id,
+                "published_at": published_at,
+                "error_message": error_message,
+                "created_at": now,
+            },
+        )
+
+
 async def _publish_linkedin(post: dict[str, Any]) -> str:
     member_id, token = await _account_token(post["user_id"], "linkedin")
     body = {
@@ -74,35 +112,74 @@ async def _publish_linkedin(post: dict[str, Any]) -> str:
         "lifecycleState": "PUBLISHED",
         "isReshareDisabledByAuthor": False,
     }
+    api_version = settings.LINKEDIN_API_VERSION or "202510"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+        "LinkedIn-Version": api_version,
+        "X-Restli-Protocol-Version": "2.0.0",
+    }
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 "https://api.linkedin.com/rest/posts",
                 json=body,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                    "LinkedIn-Version": settings.LINKEDIN_API_VERSION,
-                    "X-Restli-Protocol-Version": "2.0.0",
-                },
+                headers=headers,
             )
             response.raise_for_status()
     except httpx.HTTPStatusError as error:
-        logger.warning("LinkedIn publishing returned HTTP %s.", error.response.status_code)
-        if error.response.status_code == 401:
-            raise PublishingError("LinkedIn rejected the access token. Reconnect the account.") from error
-        if error.response.status_code == 403:
-            raise PublishingError("LinkedIn did not grant the required publishing permission.") from error
-        raise PublishingError("LinkedIn could not publish this post.") from error
+        status_code = error.response.status_code
+        try:
+            error_body = error.response.json()
+            err_msg = str(error_body.get("message") or error_body.get("error_description") or error.response.text)[:200]
+        except Exception:
+            err_msg = error.response.text[:200]
+
+        logger.error(
+            "LinkedIn publish failed: HTTP status=%s endpoint=https://api.linkedin.com/rest/posts "
+            "member_id_present=%s permission_present=true error_code=%s message=%s",
+            status_code,
+            bool(member_id),
+            status_code,
+            " ".join(err_msg.split()),
+        )
+
+        if status_code == 401:
+            msg = "LinkedIn authorization expired. Please reconnect LinkedIn."
+        elif status_code == 403:
+            msg = "LinkedIn posting permission is missing. Please reconnect and approve posting access."
+        elif status_code == 400:
+            msg = "LinkedIn rejected the post request. Check the post payload."
+        elif status_code == 429:
+            msg = "LinkedIn rate limit reached. Please try again later."
+        else:
+            msg = f"LinkedIn API returned HTTP {status_code}. The post could not be published."
+        raise PublishingError(msg) from error
     except httpx.RequestError as error:
-        logger.warning("Could not reach the LinkedIn publishing API.")
-        raise PublishingError("LinkedIn could not be reached. The post was not published.") from error
+        logger.error("Could not reach the LinkedIn publishing API.")
+        raise PublishingError("LinkedIn could not be reached. Please check your network connection.") from error
 
     post_id = response.headers.get("x-restli-id") or response.headers.get("X-RestLi-Id")
     if not post_id:
         logger.error("LinkedIn accepted a post without returning a post identifier.")
-        raise PublishingError("LinkedIn did not confirm the published post URL.")
-    return f"https://www.linkedin.com/feed/update/{post_id}"
+        raise PublishingError("LinkedIn did not confirm the published post identifier.")
+
+    published_url = f"https://www.linkedin.com/feed/update/{post_id}"
+
+    try:
+        import uuid
+        await record_social_post(
+            post_id=str(uuid.uuid4()),
+            platform="linkedin",
+            account_id=member_id,
+            content=post["content"],
+            status="published",
+            external_post_id=post_id,
+        )
+    except Exception as exc:
+        logger.warning("Failed to record social post in database: %s", exc)
+
+    return published_url
 
 
 async def _publish_instagram(post: dict[str, Any]) -> str:

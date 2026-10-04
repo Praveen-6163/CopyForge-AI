@@ -110,6 +110,22 @@ export const SocialAccountPage: React.FC<SocialAccountPageProps> = () => {
         </p>
       )}
 
+      {linkedin.status?.connected && linkedin.status?.posting_permission === false && (
+        <div role="alert" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+          <div>
+            <p className="font-bold text-amber-300">LinkedIn posting access needs to be re-authorized.</p>
+            <p className="text-xs text-slate-300 mt-0.5">Your connected LinkedIn account is missing the member posting permission (<code className="font-mono text-amber-300">w_member_social</code>).</p>
+          </div>
+          <button
+            type="button"
+            onClick={linkedin.connect}
+            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shrink-0 transition-colors"
+          >
+            Reconnect LinkedIn
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <SocialAccountCard
           platform="linkedin"
@@ -129,7 +145,7 @@ export const SocialAccountPage: React.FC<SocialAccountPageProps> = () => {
           connecting={linkedin.connecting}
           disconnecting={linkedin.disconnecting}
           connectAvailable={Boolean(linkedin.status?.configured) && !linkedin.loading && !linkedin.backendUnavailable}
-          connectLabel="Connect LinkedIn"
+          connectLabel={linkedin.status?.connected ? 'Reconnect LinkedIn' : 'Connect LinkedIn'}
           unavailableMessage="LinkedIn OAuth is not configured on the backend."
         />
 

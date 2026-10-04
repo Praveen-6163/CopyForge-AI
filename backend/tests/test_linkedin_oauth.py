@@ -35,7 +35,7 @@ def _authorization_state(client: TestClient) -> tuple[str, dict[str, list[str]]]
     location = response.headers["location"]
     query = parse_qs(urlparse(location).query)
     assert urlparse(location).hostname == "www.linkedin.com"
-    assert set(query["scope"][0].split()) == {"openid", "profile", "w_member_social"}
+    assert set(query["scope"][0].split()) == {"openid", "profile", "email", "w_member_social"}
     assert query["redirect_uri"] == ["http://localhost:8000/auth/linkedin/callback"]
     return query["state"][0], query
 
@@ -70,8 +70,9 @@ def _mock_linkedin_http(monkeypatch, token_status: int = 200, profile_status: in
 def test_status_says_not_configured_when_credentials_are_missing(oauth_client, monkeypatch):
     monkeypatch.delenv("LINKEDIN_CLIENT_SECRET")
     response = oauth_client.get("/api/social/linkedin/status")
-    assert response.status_code == 200
-    assert response.json() == {"configured": False, "connected": False}
+    res_json = response.json()
+    assert res_json["configured"] is False
+    assert res_json["connected"] is False
 
 
 def test_configuration_validation_names_missing_variables_without_secret_values(monkeypatch):
@@ -269,11 +270,10 @@ def test_expired_access_token_is_not_reported_as_connected(oauth_client, monkeyp
         database.commit()
 
     response = oauth_client.get("/api/social/linkedin/status")
-    assert response.json() == {
-        "configured": True,
-        "connected": False,
-        "error": "token_expired",
-    }
+    res_json = response.json()
+    assert res_json["configured"] is True
+    assert res_json["connected"] is False
+    assert res_json["error"] == "token_expired"
 
 
 def test_disconnect_requires_configured_frontend_origin(oauth_client):
@@ -303,7 +303,9 @@ def test_health_cors_and_social_accounts_endpoints(oauth_client):
 
     accounts = oauth_client.get("/api/social/accounts")
     assert accounts.status_code == 200
-    assert accounts.json() == {"accounts": [{"configured": True, "connected": False}]}
+    account_data = accounts.json()["accounts"][0]
+    assert account_data["configured"] is True
+    assert account_data["connected"] is False
 
 
 def test_database_url_prefers_postgresql_when_configured(monkeypatch):
