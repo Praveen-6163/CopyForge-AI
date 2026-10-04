@@ -76,6 +76,7 @@ export const App: React.FC = () => {
   const [generationOutput, setGenerationOutput] = useState<GenerationResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [pipelineStage, setPipelineStage] = useState<PipelineStage>('idle');
+  const [generationError, setGenerationError] = useState<{ message: string; isAuth: boolean } | null>(null);
 
   useEffect(() => {
     fetchHealth().then(setHealth).catch(console.error);
@@ -89,6 +90,7 @@ export const App: React.FC = () => {
       return;
     }
     setIsLoading(true);
+    setGenerationError(null);
     setPipelineStage('prompt_compiling');
     try {
       setPipelineStage('ai_generating');
@@ -98,8 +100,16 @@ export const App: React.FC = () => {
       setPipelineStage('ready');
     } catch (e: any) {
       console.error('Generation error:', e);
+      const statusCode = e.response?.status;
       const errorMsg = e.response?.data?.detail || e.message || 'Generation failed';
-      alert(`Generation Error: ${errorMsg}`);
+      if (statusCode === 401) {
+        setGenerationError({
+          message: 'LinkedIn connection expired. Reconnect LinkedIn to continue generating.',
+          isAuth: true,
+        });
+      } else {
+        setGenerationError({ message: `Generation Error: ${errorMsg}`, isAuth: false });
+      }
       setPipelineStage('idle');
     } finally {
       setIsLoading(false);
@@ -113,6 +123,7 @@ export const App: React.FC = () => {
   ) => {
     if (!generationOutput) return;
     setIsLoading(true);
+    setGenerationError(null);
     setPipelineStage('ai_generating');
     try {
       const result = await improveCopy({
@@ -127,7 +138,16 @@ export const App: React.FC = () => {
       setPipelineStage('ready');
     } catch (e: any) {
       console.error(e);
-      alert(`Refinement Error: ${e.response?.data?.detail || e.message}`);
+      const statusCode = e.response?.status;
+      const errorMsg = e.response?.data?.detail || e.message || 'Refinement failed';
+      if (statusCode === 401) {
+        setGenerationError({
+          message: 'LinkedIn connection expired. Reconnect LinkedIn to continue.',
+          isAuth: true,
+        });
+      } else {
+        alert(`Refinement Error: ${errorMsg}`);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -311,6 +331,8 @@ export const App: React.FC = () => {
             onOpenTemplates={() => setIsTemplatesOpen(true)}
             onViewCompiledPrompt={() => setIsPromptInspectorOpen(true)}
             onResetForm={handleResetForm}
+            generationError={generationError}
+            onClearError={() => setGenerationError(null)}
           />
         </AppShell>
       } />

@@ -21,6 +21,7 @@ const API_BASE = backendOrigin
 export const apiClient = axios.create({
   baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,  // send session cookie on every request
   timeout: 120000,
 });
 

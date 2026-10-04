@@ -18,14 +18,14 @@ const SESSION_KEY = 'copyforge_linkedin_session';
 export const getBackendOrigin = (): string => backendOrigin;
 
 export const storeLinkedInSession = (sessionId: string): void => {
-  if (sessionId) window.sessionStorage.setItem(SESSION_KEY, sessionId);
+  if (sessionId) window.localStorage.setItem(SESSION_KEY, sessionId);
 };
 
 export const getLinkedInSession = (): string | null =>
-  window.sessionStorage.getItem(SESSION_KEY);
+  window.localStorage.getItem(SESSION_KEY);
 
 export const clearLinkedInSession = (): void => {
-  window.sessionStorage.removeItem(SESSION_KEY);
+  window.localStorage.removeItem(SESSION_KEY);
 };
 
 const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
