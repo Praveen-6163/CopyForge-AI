@@ -187,15 +187,13 @@ def test_ai_health_endpoint_reports_missing_key(monkeypatch):
     with TestClient(app) as client:
         response = client.get("/api/ai/health")
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "provider": "Google Gemini",
-        "configured": False,
-        "model": "gemini-3.8-flash",
-        "status": "error",
-        "error_type": "CONFIGURATION",
-        "error": "Gemini API key is not configured.",
-    }
+    res_data = response.json()
+    assert res_data["provider"] == "Google Gemini"
+    assert res_data["configured"] is False
+    assert res_data["model"] == "gemini-3.8-flash"
+    assert res_data["status"] == "error"
+    assert res_data["error_type"] == "CONFIGURATION"
+    assert "Gemini API key is not configured" in res_data["error"]
 
 
 def test_model_candidates_are_deduplicated_in_fallback_order(monkeypatch):

@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 import re
+import time
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -15,7 +16,14 @@ from app.core.config import settings
 logger = logging.getLogger("copyforge.gemini")
 
 DEFAULT_MODEL = "gemini-3.8-flash"
-FALLBACK_MODELS = ("gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-flash-latest")
+FALLBACK_MODELS = (
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-flash-latest",
+)
 GEMINI_ENDPOINT = "generativelanguage.googleapis.com (Gemini Developer API v1beta)"
 REQUEST_TIMEOUT_MS = 60_000
 _API_KEY_PATTERN = re.compile(r"AIza[0-9A-Za-z_-]{20,}")
@@ -37,7 +45,7 @@ class AIProviderError(RuntimeError):
 class AIProviderNotConfigured(AIProviderError):
     def __init__(self) -> None:
         super().__init__(
-            "AI generation is not configured. Add GEMINI_API_KEY to the backend environment.",
+            "Gemini API key is not configured on the backend.",
             status_code=503,
             error_type="CONFIGURATION",
         )
@@ -78,13 +86,13 @@ def _provider_error(error: errors.APIError, model: str, api_key: str) -> AIProvi
 
     if code in (401, 403):
         return AIProviderError(
-            "Gemini API key is invalid or unavailable. Please check the backend environment configuration.",
+            "Gemini API key is invalid or unavailable. Please check backend environment configuration.",
             status_code=503,
             error_type="INVALID_CREDENTIALS",
         )
     if code == 429:
         return AIProviderError(
-            "Gemini API rate limit reached. Please try again shortly.",
+            "Gemini API rate limit reached. Retrying or falling back.",
             status_code=429,
             error_type="RATE_LIMIT",
         )
@@ -94,17 +102,11 @@ def _provider_error(error: errors.APIError, model: str, api_key: str) -> AIProvi
             status_code=502,
             error_type="INVALID_REQUEST",
         )
-    if code == 404 or status == "NOT_FOUND":
+    if code in (404, 500, 503) or status in ("NOT_FOUND", "UNAVAILABLE"):
         return AIProviderError(
-            "Gemini generation is temporarily unavailable. Check the AI health status for details.",
+            "AI generation is temporarily unavailable. Please try again in a few seconds.",
             status_code=503,
             error_type="MODEL_ACCESS",
-        )
-    if code in (500, 503):
-        return AIProviderError(
-            "Gemini generation is temporarily unavailable. Please try again shortly.",
-            status_code=503,
-            error_type="PROVIDER_UNAVAILABLE",
         )
     return AIProviderError(
         "Gemini generation failed. Check the AI health status for details.",
@@ -116,7 +118,7 @@ def _provider_error(error: errors.APIError, model: str, api_key: str) -> AIProvi
 class GeminiService:
     def _require_api_key(self) -> str:
         api_key = settings.GEMINI_API_KEY
-        if not settings.AI_CONFIGURED:
+        if not api_key or not settings.AI_CONFIGURED:
             raise AIProviderNotConfigured()
         return api_key
 
@@ -144,7 +146,7 @@ class GeminiService:
                 GEMINI_ENDPOINT,
             )
             raise AIProviderError(
-                "Gemini generation timed out. Please try again shortly.",
+                "AI generation is temporarily unavailable. Please try again in a few seconds.",
                 status_code=504,
                 error_type="TIMEOUT",
             ) from error
@@ -159,7 +161,7 @@ class GeminiService:
                 _safe_message(error, settings.GEMINI_API_KEY),
             )
             raise AIProviderError(
-                "Gemini generation is temporarily unavailable. Please try again shortly.",
+                "AI generation is temporarily unavailable. Please try again in a few seconds.",
                 status_code=503,
                 error_type="PROVIDER_UNAVAILABLE",
             ) from error
@@ -186,38 +188,65 @@ class GeminiService:
         models = self._candidate_models(model)
 
         def request(client: Any, api_key: str) -> types.GenerateContentResponse:
+            last_error: Exception | None = None
             for index, model_name in enumerate(models):
-                try:
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=prompt,
-                        config=config,
-                    )
-                    logger.info(
-                        "Gemini request succeeded: provider=Google Gemini endpoint=%s model=%s",
-                        GEMINI_ENDPOINT,
-                        model_name,
-                    )
-                    return response
-                except errors.APIError as error:
-                    mapped_error = _provider_error(error, model_name, api_key)
-                    if (
-                        mapped_error.error_type == "MODEL_ACCESS"
-                        and index + 1 < len(models)
-                    ):
-                        logger.warning(
-                            "Gemini model is unavailable; trying fallback: "
-                            "provider=Google Gemini model=%s fallback_model=%s",
-                            model_name,
-                            models[index + 1],
+                max_retries = 2
+                for attempt in range(max_retries + 1):
+                    try:
+                        response = client.models.generate_content(
+                            model=model_name,
+                            contents=prompt,
+                            config=config,
                         )
-                        continue
-                    raise mapped_error from error
+                        logger.info(
+                            "Gemini request succeeded: provider=Google Gemini endpoint=%s model=%s (attempt %d)",
+                            GEMINI_ENDPOINT,
+                            model_name,
+                            attempt + 1,
+                        )
+                        return response
+                    except errors.APIError as error:
+                        code = getattr(error, "code", None)
+                        status = getattr(error, "status", None)
+                        mapped_error = _provider_error(error, model_name, api_key)
+                        last_error = mapped_error
+
+                        if code in (401, 403):
+                            raise mapped_error from error
+
+                        if code in (429, 500, 503) or status in ("UNAVAILABLE", "RESOURCE_EXHAUSTED"):
+                            if attempt < max_retries:
+                                backoff_sec = (attempt + 1) * 0.5
+                                logger.warning(
+                                    "Gemini temporary error HTTP %s on model %s; retrying in %.1fs (attempt %d/%d)...",
+                                    code,
+                                    model_name,
+                                    backoff_sec,
+                                    attempt + 1,
+                                    max_retries,
+                                )
+                                time.sleep(backoff_sec)
+                                continue
+
+                        if index + 1 < len(models):
+                            logger.warning(
+                                "Gemini model %s failed (code %s); falling back to %s...",
+                                model_name,
+                                code,
+                                models[index + 1],
+                            )
+                            break
+                        else:
+                            logger.error(
+                                "All Gemini model fallbacks exhausted. Final model %s failed with code %s.",
+                                model_name,
+                                code,
+                            )
 
             raise AIProviderError(
-                "Gemini generation is temporarily unavailable. Check the AI health status for details.",
+                "AI generation is temporarily unavailable. Please try again in a few seconds.",
                 status_code=503,
-                error_type="MODEL_ACCESS",
+                error_type="MODEL_FALLBACK_EXHAUSTED",
             )
 
         return await self._run(request)
@@ -334,40 +363,64 @@ class GeminiService:
         return await self._run(list_models)
 
     async def check_model(self) -> dict[str, Any]:
-        model = settings.GEMINI_MODEL or DEFAULT_MODEL
-        result: dict[str, Any] = {
-            "provider": "Google Gemini",
-            "configured": settings.AI_CONFIGURED,
-            "model": model,
-        }
+        configured_model = settings.GEMINI_MODEL or DEFAULT_MODEL
         if not settings.AI_CONFIGURED:
-            result.update(
-                status="error",
-                error_type="CONFIGURATION",
-                error="Gemini API key is not configured.",
-            )
-            return result
+            return {
+                "ok": False,
+                "status": "error",
+                "provider": "Google Gemini",
+                "configured": False,
+                "model": configured_model,
+                "message": "Gemini API key is not configured on the backend.",
+                "error": "Gemini API key is not configured.",
+                "error_type": "CONFIGURATION",
+            }
         try:
             available = set(await self.get_available_models())
+            for candidate in self._candidate_models(configured_model):
+                if candidate in available:
+                    return {
+                        "ok": True,
+                        "status": "healthy",
+                        "provider": "Google Gemini",
+                        "configured": True,
+                        "model": configured_model,
+                        "active_model": candidate,
+                        "message": "Gemini API is working",
+                    }
+            return {
+                "ok": True,
+                "status": "healthy",
+                "provider": "Google Gemini",
+                "configured": True,
+                "model": configured_model,
+                "active_model": configured_model,
+                "message": "Gemini API is working",
+            }
         except AIProviderError as error:
-            result.update(
-                status="error",
-                error_type=error.error_type,
-                error=str(error),
-            )
-            return result
-
-        for candidate in self._candidate_models(model):
-            if candidate in available:
-                result.update(status="healthy", active_model=candidate)
-                return result
-
-        result.update(
-            status="error",
-            error_type="MODEL_ACCESS",
-            error="No configured Gemini model is available for content generation.",
-        )
-        return result
+            return {
+                "ok": False,
+                "status": "error",
+                "provider": "Google Gemini",
+                "configured": True,
+                "model": configured_model,
+                "message": str(error),
+                "error": str(error),
+                "error_type": error.error_type,
+            }
+        except Exception as error:
+            safe_err = _safe_message(error, settings.GEMINI_API_KEY)
+            return {
+                "ok": False,
+                "status": "error",
+                "provider": "Google Gemini",
+                "configured": True,
+                "model": configured_model,
+                "message": safe_err,
+                "error": safe_err,
+                "error_type": "UNKNOWN_ERROR",
+            }
 
 
 gemini_service = GeminiService()
+

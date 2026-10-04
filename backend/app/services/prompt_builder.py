@@ -75,12 +75,18 @@ Generate platform-ready marketing copy for the product '{product_name}' tailored
 ### CONTENT FORMAT:
 Create a {content_type}, not a generic post. Shape its structure and length for that format.
 
-### CRITICAL RULES:
-1. Return only a valid JSON object with exactly these keys: "content", "hook", "cta", "hashtags", "image_prompt".
-2. "content" is the complete platform-ready copy, including relevant hashtags where appropriate.
-3. "hook" and "cta" are concise strings taken from the generated copy; "hashtags" is an array of hashtag strings.
-4. "image_prompt" is a useful visual-generation prompt consistent with the brief, with no unsupported factual claims.
-5. Do not add markdown fences, preambles, or commentary. Ensure valid JSON and comply with the constraints for {platform}.
+### CRITICAL RULES FOR STRUCTURED JSON OUTPUT:
+1. Return ONLY a valid JSON object with these exact keys:
+   - "platform": "{platform.lower()}"
+   - "headline": "A compelling, high-converting headline or hook"
+   - "post": "The complete, platform-ready copy body"
+   - "hashtags": ["#Tag1", "#Tag2"] (an array of relevant hashtag strings)
+   - "cta": "A clear, persuasive call to action string"
+   - "source": "CopyForge AI"
+   - "content": "The full copy body (same as post)"
+   - "hook": "The headline or hook string (same as headline)"
+   - "image_prompt": "A visual AI generation prompt consistent with the post"
+2. Do not add markdown fences, preambles, or commentary. Ensure valid raw JSON adhering to all constraints for {platform}.
 """
 
         user_prompt = f"""### CONTENT BRIEF FOR GENERATION:

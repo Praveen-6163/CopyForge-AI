@@ -63,7 +63,7 @@ async def test_ai_service_requires_provider_when_unconfigured(monkeypatch):
             audience="Developers",
             objective="Product promotion",
         )
-    assert "Add GEMINI_API_KEY to the backend environment" in str(exc_info.value)
+    assert "Gemini API key is not configured on the backend." in str(exc_info.value)
 
 
 @pytest.mark.anyio

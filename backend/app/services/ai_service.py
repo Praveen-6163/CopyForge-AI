@@ -22,31 +22,68 @@ def _clean_json_text(text: str) -> str:
     return cleaned.strip()
 
 
-def _parse_generated_content(response_text: str) -> Dict[str, Any]:
-    try:
-        cleaned_text = _clean_json_text(response_text)
-        generated_content = json.loads(cleaned_text)
-        if not isinstance(generated_content, dict):
-            raise ValueError("Expected an object.")
-        if not isinstance(generated_content.get("content"), str):
-            raise ValueError("Missing generated content.")
-        for field in ("hook", "cta", "image_prompt"):
-            if not isinstance(generated_content.get(field), str) or not generated_content[field].strip():
-                raise ValueError(f"Missing {field}.")
-        hashtags = generated_content.get("hashtags")
-        if not isinstance(hashtags, list) or not all(
-            isinstance(item, str) for item in hashtags
-        ):
-            raise ValueError("Invalid hashtag list.")
-        if not generated_content["content"].strip():
-            raise ValueError("Generated content is empty.")
-        return generated_content
-    except (json.JSONDecodeError, ValueError) as error:
-        logger.warning("Could not parse structured AI response: %s", error)
+def _parse_generated_content(response_data: Any, platform: str = "linkedin") -> Dict[str, Any]:
+    if isinstance(response_data, str):
+        cleaned_text = _clean_json_text(response_data)
+        try:
+            parsed = json.loads(cleaned_text)
+        except json.JSONDecodeError as error:
+            logger.warning("Could not parse structured AI response: %s", error)
+            raise AIProviderError(
+                "Gemini returned content in an invalid format. Please retry.",
+                error_type="INVALID_RESPONSE",
+            ) from error
+    elif isinstance(response_data, dict):
+        parsed = response_data
+    else:
         raise AIProviderError(
             "Gemini returned content in an invalid format. Please retry.",
             error_type="INVALID_RESPONSE",
-        ) from error
+        )
+
+    if not isinstance(parsed, dict):
+        raise AIProviderError(
+            "Gemini returned content in an invalid format. Please retry.",
+            error_type="INVALID_RESPONSE",
+        )
+
+    post = str(parsed.get("post") or parsed.get("content") or "").strip()
+    headline = str(parsed.get("headline") or parsed.get("hook") or "").strip()
+    cta = str(parsed.get("cta") or "").strip()
+    image_prompt = str(parsed.get("image_prompt") or "").strip()
+
+    raw_hashtags = parsed.get("hashtags")
+    hashtags: list[str] = []
+    if isinstance(raw_hashtags, list):
+        for tag in raw_hashtags:
+            tag_str = str(tag).strip()
+            if tag_str:
+                if not tag_str.startswith("#"):
+                    tag_str = f"#{tag_str}"
+                hashtags.append(tag_str)
+    elif isinstance(raw_hashtags, str) and raw_hashtags.strip():
+        hashtags = [
+            f"#{t.lstrip('#')}"
+            for t in re.findall(r"#?\w+", raw_hashtags)
+        ]
+
+    if not post:
+        raise AIProviderError(
+            "Gemini returned empty post content. Please retry.",
+            error_type="EMPTY_RESPONSE",
+        )
+
+    return {
+        "platform": platform.lower(),
+        "headline": headline or post[:80],
+        "post": post,
+        "content": post,
+        "hook": headline or post[:80],
+        "hashtags": hashtags,
+        "cta": cta or "Connect with us to learn more.",
+        "source": "CopyForge AI",
+        "image_prompt": image_prompt or f"Professional visual for {platform} post",
+    }
 
 
 class AIService:
@@ -83,7 +120,7 @@ class AIService:
         )
         compiled_prompt = f"System: {system_prompt[:250]}...\n\nUser: {user_prompt}"
 
-        generated_content = await gemini_service.generate_structured_content(
+        raw_result = await gemini_service.generate_structured_content(
             user_prompt,
             system_instruction=system_prompt,
             generation_config={
@@ -92,9 +129,7 @@ class AIService:
                 "max_output_tokens": max_tokens,
             },
         )
-        generated_content = _parse_generated_content(
-            json.dumps(generated_content, ensure_ascii=False)
-        )
+        generated_content = _parse_generated_content(raw_result, platform=platform)
         return generated_content, compiled_prompt
 
     async def improve_text(
