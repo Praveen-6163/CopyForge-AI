@@ -287,7 +287,7 @@ def test_disconnect_requires_configured_frontend_origin(oauth_client):
 def test_health_cors_and_social_accounts_endpoints(oauth_client):
     health = oauth_client.get("/health")
     assert health.status_code == 200
-    assert health.json() == {"status": "healthy"}
+    assert health.json() == {"status": "ok", "service": "copyforge-ai-backend"}
 
     preflight = oauth_client.options(
         "/api/social/linkedin/status",

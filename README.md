@@ -69,7 +69,9 @@ For local use, configure the backend provider variables in an untracked backend 
 
 ## Runtime behavior and availability
 
-- The backend initializes tables and applies additive schema updates at startup. Production data must use PostgreSQL.
+- `GET /health` returns immediately with `{"status":"ok","service":"copyforge-ai-backend"}` without depending on PostgreSQL or external providers. `GET /health/db` separately checks database connectivity.
+- Database tables and additive schema updates initialize on the first database-dependent request, after the web server is accepting requests. Database connection failures return a JSON HTTP 503 and do not stop the health endpoint. Production data must use the Render `DATABASE_URL`.
+- Render starts the FastAPI application with `gunicorn app.main:app --worker-class uvicorn_worker.UvicornWorker --bind 0.0.0.0:$PORT --workers 1 --timeout 120`; Render supplies `PORT`.
 - LinkedIn OAuth establishes the CopyForge account identity; content and platform data are scoped to that account.
 - Missing provider credentials are returned as explicit configuration errors. No API call is reported as successful unless the provider confirms it.
 - Trend entries include their publisher, source URL, publication time when supplied by the feed, and retrieval time.

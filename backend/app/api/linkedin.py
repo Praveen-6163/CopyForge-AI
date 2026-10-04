@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import urlencode, urlparse
 
 import httpx
+from sqlalchemy.exc import SQLAlchemyError
 from cryptography.fernet import Fernet
 from fastapi import APIRouter, HTTPException, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -362,6 +363,8 @@ async def linkedin_oauth_callback(
     except (httpx.RequestError, ValueError):
         logger.warning("LinkedIn OAuth provider request failed.")
         return _frontend_redirect("failed", "provider")
+    except SQLAlchemyError:
+        raise
     except Exception:
         logger.error("Could not save the LinkedIn connection.")
         return _frontend_redirect("failed", "storage")

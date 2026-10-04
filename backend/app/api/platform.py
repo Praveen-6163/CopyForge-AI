@@ -11,6 +11,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.auth import require_user
 from app.core.config import settings
@@ -491,6 +492,7 @@ async def _record_automation_result(user_id: str, error: str | None) -> None:
 
 
 async def scheduler_loop() -> None:
+    await asyncio.sleep(20)
     while True:
         try:
             await process_due_posts()
@@ -508,6 +510,8 @@ async def get_trends(refresh: bool = Query(False)):
         msg = str(error)
         status_code = 503 if "not configured" in msg.lower() else (429 if "limit" in msg.lower() else 502)
         raise HTTPException(status_code=status_code, detail=msg) from error
+    except SQLAlchemyError:
+        raise
     except Exception as error:
         logger.exception("Could not load trend items.")
         raise HTTPException(status_code=502, detail="Live web search is temporarily unavailable. Please try again.") from error
@@ -522,6 +526,8 @@ async def refresh_trends():
         msg = str(error)
         status_code = 503 if "not configured" in msg.lower() else (429 if "limit" in msg.lower() else 502)
         raise HTTPException(status_code=status_code, detail=msg) from error
+    except SQLAlchemyError:
+        raise
     except Exception as error:
         logger.exception("Could not refresh trend sources.")
         raise HTTPException(status_code=502, detail="Live web search is temporarily unavailable. Please try again.") from error

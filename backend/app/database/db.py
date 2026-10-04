@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import datetime
@@ -5,14 +6,23 @@ import time
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from urllib.parse import urlparse
+from weakref import WeakKeyDictionary
 
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 
 logger = logging.getLogger("copyforge.db")
+
+_initialized_database_urls: set[str] = set()
+_initialization_locks = WeakKeyDictionary()
+
+
+class DatabaseUnavailableError(SQLAlchemyError):
+    """Raised when database configuration is missing for the current runtime."""
 
 
 def _database_url() -> str:
@@ -24,6 +34,11 @@ def _database_url() -> str:
             return "postgresql+asyncpg://" + configured_url.removeprefix("postgresql://")
         return configured_url
 
+    if os.getenv("RENDER"):
+        raise DatabaseUnavailableError(
+            "DATABASE_URL is required for database access on Render."
+        )
+
     db_path = os.path.abspath(settings.DB_PATH)
     return f"sqlite+aiosqlite:///{db_path}"
 
@@ -34,6 +49,14 @@ def _engine_for(database_url: str):
     options = {"pool_pre_ping": True}
     if parsed.scheme.startswith("sqlite"):
         options["poolclass"] = NullPool
+    else:
+        options.update(
+            pool_size=5,
+            max_overflow=5,
+            pool_timeout=5,
+            pool_recycle=1800,
+            connect_args={"timeout": 5},
+        )
     return create_async_engine(database_url, **options)
 
 
@@ -43,13 +66,30 @@ def database_url() -> str:
 
 @asynccontextmanager
 async def get_db():
-    engine = _engine_for(_database_url())
+    url = _database_url()
+    await init_db()
+    engine = _engine_for(url)
     async with engine.begin() as connection:
         yield connection
 
 
-async def init_db() -> None:
+async def check_database_connection() -> None:
     url = _database_url()
+    engine = _engine_for(url)
+    async with engine.connect() as connection:
+        await connection.execute(text("SELECT 1"))
+
+
+def _initialization_lock_for_current_loop() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    lock = _initialization_locks.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        _initialization_locks[loop] = lock
+    return lock
+
+
+async def _initialize_db(url: str) -> None:
     engine = _engine_for(url)
     is_sqlite = urlparse(url).scheme.startswith("sqlite")
     saved_default = "0" if is_sqlite else "FALSE"
@@ -342,3 +382,15 @@ async def init_db() -> None:
         logger.info("Initialized SQLite database.")
     else:
         logger.info("Initialized PostgreSQL database.")
+
+
+async def init_db() -> None:
+    url = _database_url()
+    if url in _initialized_database_urls:
+        return
+
+    async with _initialization_lock_for_current_loop():
+        if url in _initialized_database_urls:
+            return
+        await _initialize_db(url)
+        _initialized_database_urls.add(url)

@@ -5,6 +5,8 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.api.auth import require_user
 from app.core.config import settings
 from app.schemas.generation import (
@@ -151,6 +153,8 @@ async def _generate_for_user(req: GenerateRequest, user_id: str) -> GenerationRe
         raise HTTPException(status_code=502, detail=str(error)) from error
     except HTTPException:
         raise
+    except SQLAlchemyError:
+        raise
     except Exception as error:
         logger.exception("Content generation failed.")
         raise HTTPException(
@@ -228,6 +232,8 @@ async def improve_content(
         raise HTTPException(status_code=502, detail=str(error)) from error
     except HTTPException:
         raise
+    except SQLAlchemyError:
+        raise
     except Exception as error:
         logger.exception("Content refinement failed.")
         raise HTTPException(status_code=500, detail="Content refinement failed.") from error
@@ -257,6 +263,8 @@ async def get_history(
             only_saved=saved_only,
             user_id=user_id,
         )
+    except SQLAlchemyError:
+        raise
     except Exception as error:
         logger.exception("Could not retrieve account content history.")
         raise HTTPException(status_code=500, detail="Failed to fetch content history.") from error
