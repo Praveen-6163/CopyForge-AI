@@ -15,7 +15,7 @@ from app.core.config import settings
 logger = logging.getLogger("copyforge.gemini")
 
 DEFAULT_MODEL = "gemini-3.8-flash"
-FALLBACK_MODELS = ("gemini-3.8-flash", "gemini-3.5-flash-lite")
+FALLBACK_MODELS = ("gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-flash-latest")
 GEMINI_ENDPOINT = "generativelanguage.googleapis.com (Gemini Developer API v1beta)"
 REQUEST_TIMEOUT_MS = 60_000
 _API_KEY_PATTERN = re.compile(r"AIza[0-9A-Za-z_-]{20,}")
