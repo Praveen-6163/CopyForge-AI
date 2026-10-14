@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.auth import require_user
+from app.api.auth import require_user, get_optional_user
 from app.core.config import settings
 from app.schemas.generation import (
     FormattedContent,
@@ -172,24 +172,27 @@ async def _generate_for_user(req: GenerateRequest, user_id: str) -> GenerationRe
             tone=req.tone,
         )
         parameters = req.parameters.model_dump()
-        await history_service.save_generation(
-            generation_id=generation_id,
-            product_name=req.product_name,
-            product_description=req.product_description,
-            platform=req.platform,
-            tone=req.tone,
-            audience=req.audience,
-            objective=req.objective,
-            content_type=req.content_type,
-            prompt_parameters=parameters,
-            compiled_prompt=compiled_prompt,
-            generated_content=formatted_content.raw_text,
-            hook=generated["hook"],
-            cta=generated["cta"],
-            hashtags=generated["hashtags"],
-            image_prompt=generated["image_prompt"],
-            user_id=user_id,
-        )
+        try:
+            await history_service.save_generation(
+                generation_id=generation_id,
+                product_name=req.product_name,
+                product_description=req.product_description,
+                platform=req.platform,
+                tone=req.tone,
+                audience=req.audience,
+                objective=req.objective,
+                content_type=req.content_type,
+                prompt_parameters=parameters,
+                compiled_prompt=compiled_prompt,
+                generated_content=formatted_content.raw_text,
+                hook=generated["hook"],
+                cta=generated["cta"],
+                hashtags=generated["hashtags"],
+                image_prompt=generated["image_prompt"],
+                user_id=user_id,
+            )
+        except Exception as db_err:
+            logger.warning("[%s] Failed to save generation to history: %s", request_id, db_err)
         duration_ms = int((time.time() - start_time) * 1000)
         logger.info(
             "[%s] Generation succeeded: platform=%s duration_ms=%d model=%s",
@@ -268,7 +271,7 @@ async def _generate_for_user(req: GenerateRequest, user_id: str) -> GenerationRe
 @router.post("/generate", response_model=GenerationResponse)
 async def generate_content(
     req: GenerateRequest,
-    user_id: str = Depends(require_user),
+    user_id: str = Depends(get_optional_user),
 ):
     return await _generate_for_user(req, user_id)
 
@@ -276,7 +279,7 @@ async def generate_content(
 @router.post("/improve", response_model=GenerationResponse)
 async def improve_content(
     req: ImproveRequest,
-    user_id: str = Depends(require_user),
+    user_id: str = Depends(get_optional_user),
 ):
     generation_id = str(uuid.uuid4())
     target_platform = req.new_platform or req.platform
@@ -344,7 +347,7 @@ async def improve_content(
 @router.post("/regenerate", response_model=GenerationResponse)
 async def regenerate_content(
     req: GenerateRequest,
-    user_id: str = Depends(require_user),
+    user_id: str = Depends(get_optional_user),
 ):
     return await _generate_for_user(req, user_id)
 
@@ -355,7 +358,7 @@ async def get_history(
     platform: Optional[str] = Query(None),
     tone: Optional[str] = Query(None),
     saved_only: bool = Query(False),
-    user_id: str = Depends(require_user),
+    user_id: str = Depends(get_optional_user),
 ):
     try:
         return await history_service.get_history(

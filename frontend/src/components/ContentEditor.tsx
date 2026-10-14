@@ -2,10 +2,11 @@ import React, { useState } from 'react';
 import { 
   Copy, Check, Download, Bookmark, Share2, RefreshCw, 
   Scissors, Maximize2, Sparkles, Terminal, FileText, CheckCircle2,
-  AlertTriangle, Mail, Twitter, Instagram, ShieldAlert
+  AlertTriangle, Mail, Twitter, Instagram, ShieldAlert, Send, ExternalLink
 } from 'lucide-react';
 import { GenerationResponse, ToneType, PlatformType } from '../types/generation';
-import { createPost } from '../services/platformApi';
+import { createPost, publishPost } from '../services/platformApi';
+import { getLinkedInAuthorizationUrl } from '../services/linkedinOAuth';
 
 interface ContentEditorProps {
   generation: GenerationResponse | null;
@@ -31,6 +32,9 @@ export const ContentEditor: React.FC<ContentEditorProps> = ({
   const [queueBusy, setQueueBusy] = useState(false);
   const [queueMessage, setQueueMessage] = useState('');
   const [queueError, setQueueError] = useState('');
+  const [publishing, setPublishing] = useState(false);
+  const [publishedUrl, setPublishedUrl] = useState('');
+  const [publishError, setPublishError] = useState('');
 
   React.useEffect(() => {
     if (generation) {
@@ -108,6 +112,43 @@ export const ContentEditor: React.FC<ContentEditorProps> = ({
       setQueueError(detail || 'Could not save this content to your account.');
     } finally {
       setQueueBusy(false);
+    }
+  };
+
+  const handlePublishLinkedIn = async () => {
+    if (!generation) return;
+    setPublishing(true);
+    setPublishError('');
+    setPublishedUrl('');
+    try {
+      const post = await createPost({
+        topic: generation.product_name,
+        description: generation.product_description,
+        platform: 'linkedin',
+        content: generation.generated_content,
+        tone: generation.tone,
+        audience: generation.audience,
+        content_type: generation.content_type,
+        hook: generation.hook,
+        cta: generation.cta,
+        hashtags: generation.hashtags,
+        image_prompt: generation.image_prompt,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata',
+        mode: 'draft_only',
+      });
+      const published = await publishPost(post.id);
+      setPublishedUrl(published.published_url || 'https://www.linkedin.com/feed/');
+    } catch (requestError: any) {
+      const detail = requestError?.response?.data?.detail;
+      const status = requestError?.response?.status;
+      if (status === 401) {
+        setPublishError('LinkedIn account not connected. Please connect your LinkedIn account to publish directly.');
+      } else {
+        const errorText = typeof detail === 'string' ? detail : (detail?.message || 'Publishing to LinkedIn failed. Please check your account connection.');
+        setPublishError(errorText);
+      }
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -286,25 +327,69 @@ export const ContentEditor: React.FC<ContentEditorProps> = ({
           </div>
 
           {['LinkedIn', 'Instagram'].includes(generation.platform) && (
-            <div className="mb-5 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => void addToQueue('approval_required')}
-                disabled={queueBusy}
-                className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-xs text-white font-semibold"
-              >
-                {queueBusy ? 'Saving…' : 'Send to Approval Queue'}
-              </button>
-              <button
-                type="button"
-                onClick={() => void addToQueue('draft_only')}
-                disabled={queueBusy}
-                className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-60 text-xs text-slate-200 border border-slate-700"
-              >
-                Save Draft
-              </button>
-              {queueMessage && <span role="status" className="text-xs text-emerald-300">{queueMessage}</span>}
-              {queueError && <span role="alert" className="text-xs text-rose-300">{queueError}</span>}
+            <div className="space-y-3 pt-2">
+              <div className="flex flex-wrap items-center gap-2">
+                {generation.platform === 'LinkedIn' && (
+                  <button
+                    type="button"
+                    onClick={handlePublishLinkedIn}
+                    disabled={publishing}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:opacity-60 text-xs text-white font-bold flex items-center gap-1.5 shadow-lg shadow-blue-500/25 transition-all transform hover:-translate-y-0.5"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    {publishing ? 'Publishing to LinkedIn…' : 'Publish to LinkedIn Now'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void addToQueue('approval_required')}
+                  disabled={queueBusy}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-xs text-white font-semibold"
+                >
+                  {queueBusy ? 'Saving…' : 'Send to Approval Queue'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void addToQueue('draft_only')}
+                  disabled={queueBusy}
+                  className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 disabled:opacity-60 text-xs text-slate-200 border border-slate-700"
+                >
+                  Save Draft
+                </button>
+                {queueMessage && <span role="status" className="text-xs text-emerald-300">{queueMessage}</span>}
+                {queueError && <span role="alert" className="text-xs text-rose-300">{queueError}</span>}
+              </div>
+
+              {publishedUrl && (
+                <div className="p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-between gap-3 text-xs text-emerald-300">
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    Successfully published to your LinkedIn feed!
+                  </span>
+                  <a
+                    href={publishedUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 font-bold text-white bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded-lg transition-colors shrink-0"
+                  >
+                    View on LinkedIn <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              )}
+
+              {publishError && (
+                <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 flex items-center justify-between gap-3 text-xs text-rose-300">
+                  <span>{publishError}</span>
+                  {publishError.includes('not connected') && (
+                    <a
+                      href={getLinkedInAuthorizationUrl()}
+                      className="font-bold text-white bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded-lg transition-colors inline-flex items-center gap-1 shrink-0"
+                    >
+                      Connect LinkedIn
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

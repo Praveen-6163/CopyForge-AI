@@ -15,14 +15,13 @@ from app.core.config import settings
 
 logger = logging.getLogger("copyforge.gemini")
 
-DEFAULT_MODEL = "gemini-3.8-flash"
+DEFAULT_MODEL = "gemini-3.5-flash"
 FALLBACK_MODELS = (
+    "gemini-3.5-flash",
     "gemini-3.8-flash",
     "gemini-3.7-flash",
-    "gemini-3.6-flash",
-    "gemini-3.5-flash-lite",
-    "gemini-3.5-flash",
-    "gemini-2.5-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-flash-latest",
 )
 GEMINI_ENDPOINT = "generativelanguage.googleapis.com (Gemini Developer API v1beta)"
 REQUEST_TIMEOUT_MS = 60_000
@@ -182,8 +181,13 @@ class GeminiService:
             config_data.update(generation_config.model_dump(exclude_none=True))
         if system_instruction is not None:
             config_data["system_instruction"] = system_instruction
-        if tools is not None:
-            config_data["tools"] = list(tools)
+        if "max_output_tokens" in config_data and (config_data["max_output_tokens"] or 0) < 2048:
+            config_data["max_output_tokens"] = 2048
+        if "thinking_config" not in config_data:
+            try:
+                config_data["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+            except Exception:
+                pass
         config = types.GenerateContentConfig(**config_data) if config_data else None
         models = self._candidate_models(model)
 

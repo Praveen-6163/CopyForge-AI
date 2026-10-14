@@ -33,3 +33,27 @@ async def require_user(request: Request) -> str:
             detail="Your CopyForge session has expired. Reconnect LinkedIn to continue.",
         )
     return str(row[0])
+
+
+async def get_optional_user(request: Request) -> str:
+    session_id = _request_session_id(request)
+    if session_id:
+        try:
+            async with get_db() as db:
+                row = (
+                    await db.execute(
+                        text(
+                            """
+                            SELECT user_id FROM user_sessions
+                            WHERE session_hash = :session_hash AND expires_at > :now
+                            """
+                        ),
+                        {"session_hash": _hash(session_id), "now": int(time.time())},
+                    )
+                ).first()
+            if row is not None:
+                return str(row[0])
+        except Exception:
+            pass
+    return "workspace_guest"
+

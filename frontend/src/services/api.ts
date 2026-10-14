@@ -20,6 +20,14 @@ export const apiClient = axios.create({
   timeout: 120000,
 });
 
+apiClient.interceptors.request.use((config) => {
+  const sessionId = getLinkedInSession();
+  if (sessionId && !config.headers.Authorization) {
+    config.headers.Authorization = `Bearer ${sessionId}`;
+  }
+  return config;
+});
+
 export interface ParsedApiError {
   message: string;
   isAuth: boolean;
